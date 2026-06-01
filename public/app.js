@@ -1,19 +1,36 @@
+console.log("APP.JS LOADED");
+
 const socket = io();
+
+socket.on("connect", () => {
+    console.log("Connected to Socket.IO");
+});
 
 function sendMessage() {
 
-    const username =
-        document.getElementById("username").value;
+    const input =
+        document.getElementById("message");
 
-    const message =
-        document.getElementById("message").value;
+    if (!input) {
+        alert("Message box not found");
+        return;
+    }
+
+    const message = input.value.trim();
+
+    if (!message) {
+        return;
+    }
+
+    const username =
+        localStorage.getItem("username") || "Guest";
 
     socket.emit("chat-message", {
         username,
         message
     });
 
-    document.getElementById("message").value = "";
+    input.value = "";
 }
 
 socket.on("chat-message", (data) => {
@@ -21,13 +38,12 @@ socket.on("chat-message", (data) => {
     const messages =
         document.getElementById("messages");
 
+    if (!messages) return;
+
     messages.innerHTML += `
         <p>
-        <b>${data.username}:</b>
-        ${data.message}
+            <b>${data.username}:</b>
+            ${data.message}
         </p>
     `;
-
-    messages.scrollTop =
-        messages.scrollHeight;
 });
