@@ -7,106 +7,88 @@ const router = express.Router();
 
 /* REGISTER */
 router.post("/register", async (req, res) => {
-
     try {
+        const password = req.body.password;
+        const name = req.body.name ? req.body.name.trim() : "";
+        const mobileNumber = req.body.mobileNumber ? req.body.mobileNumber.trim() : "";
+        const profilePicture = req.body.profilePicture || "";
 
-        const username =
-            req.body.username.trim().toLowerCase();
+        console.log("Register Request - Name:", name, "Mobile:", mobileNumber);
 
-        const password =
-            req.body.password;
-
-        console.log("Register Request:", username);
-
-        const existingUser =
-            await User.findOne({
-                username: username
-            });
-
-        console.log("Existing User:", existingUser);
-
-        if (existingUser) {
-
+        if (!password || !name || !mobileNumber) {
             return res.status(400).json({
-                message: "User already exists"
+                message: "Name, mobile number, and password are required"
             });
-
         }
 
-        const hashedPassword =
-            await bcrypt.hash(password, 10);
+        const existingMobile = await User.findOne({ mobileNumber });
+        if (existingMobile) {
+            return res.status(400).json({
+                message: "Mobile number is already registered"
+            });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
 
         const user = new User({
-            username,
-            password: hashedPassword
+            password: hashedPassword,
+            name,
+            mobileNumber,
+            profilePicture
         });
 
         await user.save();
 
-        console.log("User Created:", username);
+        console.log("User Created:", mobileNumber);
 
         res.json({
             message: "Account Created"
         });
 
     } catch (err) {
-
         console.error(err);
-
         res.status(500).json({
             message: "Server Error"
         });
-
     }
-
 });
 
 /* LOGIN */
 router.post("/login", async (req, res) => {
-
     try {
+        const mobileNumber = req.body.mobileNumber ? req.body.mobileNumber.trim() : "";
+        const password = req.body.password;
 
-        const username =
-            req.body.username.trim().toLowerCase();
+        console.log("Login Attempt:", mobileNumber);
 
-        const password =
-            req.body.password;
-
-        console.log("Login Attempt:", username);
-
-        const user =
-            await User.findOne({
-                username: username
+        if (!mobileNumber || !password) {
+            return res.status(400).json({
+                message: "Mobile number and password are required"
             });
+        }
 
-        console.log("User Found:", user);
+        const user = await User.findOne({ mobileNumber });
+
+        console.log("User Found:", user ? user.name : "None");
 
         if (!user) {
-
             return res.status(400).json({
                 message: "User Not Found"
             });
-
         }
 
-        const valid =
-            await bcrypt.compare(
-                password,
-                user.password
-            );
-
+        const valid = await bcrypt.compare(password, user.password);
         if (!valid) {
-
             return res.status(400).json({
                 message: "Wrong Password"
             });
-
         }
 
         const token = jwt.sign(
             {
                 id: user._id,
-                username: user.username
+                mobileNumber: user.mobileNumber,
+                name: user.name
             },
             process.env.JWT_SECRET,
             {
@@ -116,18 +98,15 @@ router.post("/login", async (req, res) => {
 
         res.json({
             token,
-            username: user.username
+            mobileNumber: user.mobileNumber,
+            name: user.name
         });
 
     } catch (err) {
-
         console.error(err);
-
         res.status(500).json({
             message: "Server Error"
         });
-
     }
-
 });
 module.exports = router;

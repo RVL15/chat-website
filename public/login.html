@@ -10,9 +10,13 @@
         if (localStorage.getItem("token")) {
             window.location.href = "chat.html";
         }
+        // Load theme immediately to avoid visual flash
+        if (localStorage.getItem("theme") === "light") {
+            document.documentElement.classList.add("light-mode");
+        }
     </script>
 </head>
-<body>
+<body class="auth-page">
     <div class="auth-container">
         <div class="auth-card">
             <div class="auth-header">
@@ -25,9 +29,9 @@
 
             <form id="loginForm" onsubmit="event.preventDefault(); login();" style="display: flex; flex-direction: column; gap: 20px;">
                 <div class="form-group">
-                    <label for="username">Username</label>
+                    <label for="mobileNumber">Mobile Number</label>
                     <div class="input-wrapper">
-                        <input id="username" type="text" placeholder="Enter username" required autocomplete="username">
+                        <input id="mobileNumber" type="text" placeholder="Enter mobile number" required autocomplete="tel">
                     </div>
                 </div>
 

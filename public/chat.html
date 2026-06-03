@@ -3,30 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Global Lounge - AeroChat</title>
+    <title>AeroChat</title>
     <link rel="stylesheet" href="style.css">
     <script>
-        // Inline auth check before page render
+        // Check token state before compiling HTML
         if (!localStorage.getItem("token")) {
             window.location.href = "login.html";
+        }
+        // Load theme immediately to avoid visual flash
+        if (localStorage.getItem("theme") === "light") {
+            document.documentElement.classList.add("light-mode");
         }
     </script>
 </head>
 <body>
     <div class="app-container">
-        <!-- Sidebar Navigation & User list -->
-        <aside class="sidebar">
+        <!-- Sidebar: Active lists and user details -->
+        <aside id="appSidebar" class="sidebar">
             <div class="sidebar-header">
-                <div class="logo-icon">
-                    <!-- SVG chat bubble icon -->
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: white;">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                    </svg>
+                <div class="logo-section">
+                    <span class="logo-text">AeroChat</span>
                 </div>
-                <span class="logo-text">AeroChat</span>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <!-- Theme Toggle Button -->
+                    <button id="themeToggleBtn" class="btn-icon" onclick="toggleTheme()" title="Toggle Dark/Light Mode" style="color: var(--text-secondary);">
+                        <svg id="themeMoonIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                        </svg>
+                        <svg id="themeSunIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                            <circle cx="12" cy="12" r="5"></circle>
+                            <line x1="12" y1="1" x2="12" y2="3"></line>
+                            <line x1="12" y1="21" x2="12" y2="23"></line>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                            <line x1="1" y1="12" x2="3" y2="12"></line>
+                            <line x1="21" y1="12" x2="23" y2="12"></line>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                        </svg>
+                    </button>
+                    <!-- Create Group Action Button -->
+                    <button class="btn-icon" onclick="openGroupModal()" title="Create New Group" style="color: var(--text-secondary);">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                            <path d="M21 15h3"></path>
+                            <path d="M22.5 13.5v3"></path>
+                            <path d="M9 21v-2a4 4 0 0 0-4-4H3a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="4" cy="7" r="4"></circle>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                    </button>
+                    <!-- Mobile only close icon -->
+                    <button class="btn-icon mobile-toggle" onclick="toggleSidebar()" title="Close Sidebar" style="color: var(--text-secondary);">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
             </div>
 
-            <!-- Profile and Logout -->
+            <!-- Profile dashboard segment -->
             <div class="user-profile">
                 <div class="profile-info">
                     <div id="userAvatar" class="avatar">
@@ -38,7 +76,6 @@
                         <div class="profile-status">online</div>
                     </div>
                 </div>
-                <!-- Logout Button -->
                 <button onclick="logout()" class="btn-icon" title="Logout">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -48,49 +85,265 @@
                 </button>
             </div>
 
-            <!-- Online List -->
-            <div class="online-section">
-                <div class="section-title">
-                    <span>Online Users</span>
-                    <span id="onlineCount" class="online-badge">0</span>
+            <!-- Sidebar Navigation Tabs -->
+            <div class="sidebar-tabs">
+                <button id="chatsTab" class="tab-btn active" onclick="switchSidebarTab('chats')">Chats</button>
+                <button id="contactsTab" class="tab-btn" onclick="switchSidebarTab('contacts')">Contacts</button>
+                <button id="requestsTab" class="tab-btn" onclick="switchSidebarTab('requests')" style="position: relative;">
+                    Requests
+                    <span id="requestsCountBadge" class="tab-badge-count" style="display: none;">0</span>
+                </button>
+                <button id="searchTab" class="tab-btn" onclick="switchSidebarTab('search')">Find Users</button>
+            </div>
+
+            <!-- Search box container -->
+            <div class="search-container">
+                <div class="search-wrapper" style="display: flex; gap: 8px; align-items: center; width: 100%;">
+                    <div style="position: relative; flex: 1; display: flex; align-items: center;">
+                        <span class="search-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                        </span>
+                        <input id="searchInput" type="text" placeholder="Search..." oninput="onSearchInput()" style="width: 100%;">
+                    </div>
+                    <button id="globalSearchBtn" onclick="triggerGlobalSearch()" class="btn-secondary-sm" style="display: none; height: 32px; padding: 0 12px; margin-top: 0; border-radius: 8px;">
+                        Search
+                    </button>
                 </div>
-                <div id="usersList" class="users-list">
-                    <!-- Dynamic online user elements -->
+            </div>
+
+            <!-- Double List Sections (swapped dynamically) -->
+            <div class="online-section">
+                <!-- Active chats list -->
+                <div id="conversationsList" class="users-list">
+                    <!-- Conversations loaded dynamically -->
+                </div>
+                <!-- Contacts list -->
+                <div id="contactsList" class="users-list" style="display: none;">
+                    <!-- Contacts loaded dynamically -->
+                </div>
+                <!-- Chat Requests list -->
+                <div id="requestsList" class="users-list" style="display: none;">
+                    <!-- Chat requests loaded dynamically -->
+                </div>
+                <!-- Global Search List -->
+                <div id="searchResultsList" class="users-list" style="display: none;">
+                    <!-- Search results loaded dynamically -->
                 </div>
             </div>
         </aside>
 
-        <!-- Main Chat Area -->
+        <!-- Main Chat Stream area -->
         <main class="chat-pane">
+            <!-- Dynamic Scoped Header details -->
             <div class="chat-header">
-                <h2 class="chat-room-title"># global-lounge</h2>
-                <div id="roomStatus" class="chat-room-status">Welcome to the main chat room</div>
+                <div style="display: flex; align-items: center; gap: 12px; flex: 1; overflow: hidden;">
+                    <!-- Menu hamburger icon for mobile sidebar opening -->
+                    <button class="btn-icon mobile-toggle" onclick="toggleSidebar()" title="Open Sidebar">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                    </button>
+                    <div class="chat-header-info" style="flex: 1; overflow: hidden;">
+                        <h2 id="activeChatTitle" class="chat-room-title">Select a Conversation</h2>
+                        <div id="activeChatStatus" class="chat-room-status">Choose a contact to begin messaging</div>
+                    </div>
+                </div>
+                <div class="header-actions" style="display: flex; align-items: center; gap: 8px;">
+                    <!-- Group Info Action Button -->
+                    <button id="groupInfoBtn" class="btn-icon" onclick="openGroupInfo()" title="Group Info / Settings" style="display: none; color: var(--text-secondary); padding: 4px;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                    </button>
+                    <!-- Leave Group Action Button -->
+                    <button id="leaveGroupBtn" class="btn-icon btn-leave-group" onclick="leaveActiveGroup()" title="Leave Group" style="display: none; padding: 6px 10px; font-size: 12px; font-weight: 600; color: var(--text-secondary); background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); border-radius: 8px; width: auto; height: auto;">
+                        Leave Group
+                    </button>
+                </div>
             </div>
 
-            <!-- Messages Stream -->
+            <!-- Chat messages stream feed -->
             <div id="messages" class="messages-area">
-                <!-- Chat messages go here dynamically -->
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); text-align: center; gap: 10px;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--wa-green)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <p style="font-size: 15px; font-weight: 500;">AeroChat Dark Web Messenger</p>
+                    <p style="font-size: 13px; max-width: 250px;">Select a chat in the sidebar or start messaging online users.</p>
+                </div>
             </div>
 
-            <!-- Typing notifications -->
+            <!-- Typing notification text bar -->
             <div id="typingStatus" class="typing-status-bar"></div>
 
-            <!-- Message Input form -->
-            <div class="chat-input-area">
+            <!-- Chat message footer sender form -->
+            <div class="chat-input-area" id="chatInputArea" style="display: none;">
+                <!-- File Attachment Preview Pill -->
+                <div id="filePreviewContainer" class="file-preview-bar" style="display: none;">
+                    <span id="filePreviewName" class="file-preview-name">file.png</span>
+                    <button type="button" class="btn-preview-remove" onclick="removeSelectedFile()" title="Cancel attachment">&times;</button>
+                </div>
+
                 <form id="chatForm" onsubmit="event.preventDefault(); sendMessage();" class="chat-input-wrapper">
-                    <input id="message" type="text" placeholder="Type your message..." autocomplete="off" required>
-                    <button type="submit" class="btn-send">
+                    <!-- Emoji Picker Trigger Button -->
+                    <button type="button" class="btn-icon" id="emojiBtn" onclick="toggleEmojiPicker()" title="Emoji Keyboard" style="color: var(--text-secondary); width: 36px; height: 36px; padding: 6px;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                            <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                            <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                        </svg>
+                    </button>
+                    
+                    <!-- Media Attachment Trigger Button -->
+                    <button type="button" class="btn-icon" id="attachmentBtn" onclick="document.getElementById('mediaInput').click()" title="Attach File" style="color: var(--text-secondary); width: 36px; height: 36px; padding: 6px;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                        </svg>
+                    </button>
+                    <input type="file" id="mediaInput" style="display: none;" onchange="handleFileSelected(event)">
+
+                    <input id="message" type="text" placeholder="Type a message" autocomplete="off" oninput="handleMessageInput(event)">
+                    
+                    <!-- Voice Note Recorder Button -->
+                    <button type="button" class="btn-icon" id="voiceNoteBtn" onclick="toggleVoiceRecording()" title="Record Voice Message" style="color: var(--text-secondary); width: 36px; height: 36px; padding: 6px;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                            <line x1="12" y1="19" x2="12" y2="23"></line>
+                            <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                    </button>
+
+                    <button type="submit" class="btn-send" title="Send Message">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="22" y1="2" x2="11" y2="13"></line>
                             <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                         </svg>
                     </button>
                 </form>
+
+                <!-- Emoji Picker Panel -->
+                <div id="emojiPicker" class="emoji-picker-panel" style="display: none;">
+                    <!-- Populated dynamically via JS -->
+                </div>
             </div>
         </main>
     </div>
 
-    <!-- Socket.IO client library -->
+    <!-- Custom Delete Modal Dialog Overlay -->
+    <div id="deleteModal" class="modal-overlay" onclick="if(event.target === this) closeDeleteModal();">
+        <div class="modal-content">
+            <h3>Delete message?</h3>
+            <div class="modal-buttons">
+                <button onclick="confirmDelete('me')" class="btn-modal">Delete for me</button>
+                <button id="deleteEveryoneBtn" onclick="confirmDelete('everyone')" class="btn-modal btn-modal-danger">Delete for everyone</button>
+                <button onclick="closeDeleteModal()" class="btn-modal btn-modal-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Group Creation Modal Dialog -->
+    <div id="groupModal" class="modal-overlay" onclick="if(event.target === this) closeGroupModal();">
+        <div class="modal-content">
+            <h3>Create New Group</h3>
+            <div class="form-group" style="margin-bottom: 12px; margin-top: 10px;">
+                <label for="groupNameInput">Group Name</label>
+                <input id="groupNameInput" type="text" class="modal-input" placeholder="Enter group name" required>
+            </div>
+            <div class="form-group">
+                <label>Select Participants</label>
+                <div id="groupParticipantsList" class="checkbox-list">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+            <div class="modal-buttons" style="margin-top: 15px;">
+                <button onclick="submitCreateGroup()" class="btn-modal btn-modal-submit">Create Group</button>
+                <button onclick="closeGroupModal()" class="btn-modal btn-modal-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sliding Group Info/Settings Panel -->
+    <div id="groupInfoPanel" class="group-info-panel">
+        <div class="panel-header">
+            <h3>Group Information</h3>
+            <button class="btn-icon" onclick="closeGroupInfo()" title="Close Panel" style="color: var(--text-secondary); width: 36px; height: 36px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="panel-body">
+            <div class="group-metadata-section" style="text-align: center; padding: 20px 0; border-bottom: 1px solid var(--border-color);">
+                <div id="groupInfoAvatar" class="group-info-avatar" style="width: 80px; height: 80px; border-radius: 50%; font-size: 28px; font-weight: 700; background: var(--border-color); display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto; color: white;">GP</div>
+                <h4 id="groupInfoName" style="font-size: 18px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Group Name</h4>
+                <p id="groupInfoCount" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 0;">0 participants</p>
+            </div>
+            
+            <!-- Admin Settings Section -->
+            <div id="adminSettingsSection" class="panel-section admin-only-feature" style="display: none; padding: 15px 0; border-bottom: 1px solid var(--border-color);">
+                <h5 style="font-size: 12px; text-transform: uppercase; color: var(--wa-green); letter-spacing: 0.5px; margin-bottom: 12px;">Admin Settings</h5>
+                <div class="setting-item">
+                    <label for="restrictMessagingCheckbox" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; font-size: 13.5px; color: var(--text-primary);">
+                        <span>Only Admins can message</span>
+                        <input type="checkbox" id="restrictMessagingCheckbox" onchange="toggleGroupRestriction(event)" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--wa-green);">
+                    </label>
+                </div>
+                <div class="setting-item" style="margin-top: 15px;">
+                    <label style="font-size: 12.5px; color: var(--text-secondary); display: block; margin-bottom: 6px;">Add Member by Mobile Number</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="addGroupMemberMobile" class="modal-input" placeholder="e.g. +19992223333" style="margin-bottom: 0; padding: 8px 12px; font-size: 13px; flex: 1;">
+                        <button onclick="addGroupMember()" class="btn-send" style="width: auto; height: 35px; padding: 0 14px; border-radius: 8px; font-size: 13px; background: var(--wa-green); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; border: none; cursor: pointer;">Add</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Participants List Section -->
+            <div class="panel-section" style="padding: 15px 0;">
+                <h5 style="font-size: 12px; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.5px; margin-bottom: 12px;">Participants</h5>
+                <div id="groupMembersList" class="members-list" style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- Populated dynamically via JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Forward Message Modal -->
+    <div id="forwardModal" class="modal-overlay" onclick="if(event.target === this) closeForwardModal();">
+        <div class="modal-content" style="max-width: 380px;">
+            <h3>Forward Message</h3>
+            <div class="form-group" style="margin-top: 10px; margin-bottom: 12px;">
+                <input type="text" id="forwardSearch" class="modal-input" placeholder="Search chats or contacts" oninput="filterForwardList(event)" style="margin-bottom: 0;">
+            </div>
+            <div class="form-group">
+                <label>Select Receivers</label>
+                <div id="forwardList" class="checkbox-list" style="max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; background: rgba(0,0,0,0.2);">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+            <div class="modal-buttons" style="margin-top: 15px;">
+                <button onclick="submitForward()" class="btn-modal btn-modal-submit">Forward</button>
+                <button onclick="closeForwardModal()" class="btn-modal btn-modal-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Lightbox Modal -->
+    <div id="lightboxModal" class="lightbox-overlay" onclick="closeLightbox(event)" style="display: none;">
+        <img id="lightboxImg" class="lightbox-image" src="" alt="Enlarged Image">
+        <button class="lightbox-close" onclick="closeLightbox(event)">&times;</button>
+    </div>
+
+    <!-- Script assets -->
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
 </body>
