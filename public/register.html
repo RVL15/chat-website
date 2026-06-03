@@ -1,11 +1,61 @@
-<h2>Register</h2>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - AeroChat</title>
+    <link rel="stylesheet" href="style.css">
+    <script>
+        // Redirect to chat if already logged in
+        if (localStorage.getItem("token")) {
+            window.location.href = "chat.html";
+        }
+    </script>
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h1>AeroChat</h1>
+                <p>Create your account and start chatting</p>
+            </div>
 
-<input id="username" placeholder="Username">
+            <!-- Custom alert box for user messages -->
+            <div id="alert" class="alert-box"></div>
 
-<input id="password" type="password" placeholder="Password">
+            <form id="registerForm" onsubmit="event.preventDefault(); register();" style="display: flex; flex-direction: column; gap: 20px;">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <div class="input-wrapper">
+                        <input id="username" type="text" placeholder="Choose a username" required autocomplete="username">
+                    </div>
+                </div>
 
-<button onclick="register()">
-    Register
-</button>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <div class="input-wrapper">
+                        <input id="password" type="password" placeholder="Create a password" required autocomplete="new-password">
+                    </div>
+                </div>
 
-<script src="register.js"></script>
+                <div class="form-group">
+                    <label for="confirmPassword">Confirm Password</label>
+                    <div class="input-wrapper">
+                        <input id="confirmPassword" type="password" placeholder="Repeat your password" required autocomplete="new-password">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-primary">
+                    Register
+                </button>
+            </form>
+
+            <div class="auth-footer">
+                Already have an account? <a href="login.html" class="auth-link">Login</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="register.js"></script>
+</body>
+</html>

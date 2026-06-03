@@ -1,18 +1,54 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Login</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - AeroChat</title>
+    <link rel="stylesheet" href="style.css">
+    <script>
+        // Redirect to chat if already logged in
+        if (localStorage.getItem("token")) {
+            window.location.href = "chat.html";
+        }
+    </script>
 </head>
 <body>
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h1>AeroChat</h1>
+                <p>Welcome back! Please login to your account</p>
+            </div>
 
-<h2>Login</h2>
+            <!-- Custom alert box for user messages -->
+            <div id="alert" class="alert-box"></div>
 
-<input id="username" placeholder="Username">
-<input id="password" type="password" placeholder="Password">
+            <form id="loginForm" onsubmit="event.preventDefault(); login();" style="display: flex; flex-direction: column; gap: 20px;">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <div class="input-wrapper">
+                        <input id="username" type="text" placeholder="Enter username" required autocomplete="username">
+                    </div>
+                </div>
 
-<button onclick="login()">Login</button>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <div class="input-wrapper">
+                        <input id="password" type="password" placeholder="Enter password" required autocomplete="current-password">
+                    </div>
+                </div>
 
-<script src="login.js"></script>
+                <button type="submit" class="btn-primary">
+                    Login
+                </button>
+            </form>
 
+            <div class="auth-footer">
+                Don't have an account? <a href="register.html" class="auth-link">Register</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="login.js"></script>
 </body>
 </html>
