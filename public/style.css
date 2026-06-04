@@ -460,6 +460,7 @@ body {
     height: 100%;
     position: relative;
     min-height: 0;
+    background: var(--bg-chat);
 }
 
 .chat-header {
@@ -500,8 +501,13 @@ body {
     flex-direction: column;
     gap: 8px;
     background-color: var(--bg-chat);
+    background-image: radial-gradient(circle at 0 0, rgba(255, 255, 255, 0.02) 0, transparent 28%), radial-gradient(circle at 100% 0, rgba(255, 255, 255, 0.015) 0, transparent 24%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cpath fill='%23ffffff' fill-opacity='1' d='M40 0C17.9 0 0 17.9 0 40s17.9 40 40 40 40-17.9 40-40S62.1 0 40 0zm0 72c-17.7 0-32-14.3-32-32S22.3 8 40 8s32 14.3 32 32-14.3 32-32 32zm0-56c-13.3 0-24 10.7-24 24s10.7 24 24 24 24-10.7 24-24-10.7-24-24-24zm0 40c-8.8 0-16-7.2-16-16s7.2-16 16-16 16 7.2 16 16-7.2 16-16 16z'/%3E%3C/svg%3E");
+    background-size: cover, cover, 80px 80px;
+    background-attachment: local, local, local;
     position: relative;
     min-height: 0;
+    isolation: isolate;
+    overscroll-behavior-y: contain;
 }
 
 /* Sublte Repeating WhatsApp Grid Background Doodle */
@@ -512,6 +518,12 @@ body {
     opacity: 0.04;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cpath fill='%23ffffff' d='M40 0C17.9 0 0 17.9 0 40s17.9 40 40 40 40-17.9 40-40S62.1 0 40 0zm0 72c-17.7 0-32-14.3-32-32S22.3 8 40 8s32 14.3 32 32-14.3 32-32 32zm0-56c-13.3 0-24 10.7-24 24s10.7 24 24 24 24-10.7 24-24-10.7-24-24-24zm0 40c-8.8 0-16-7.2-16-16s7.2-16 16-16 16 7.2 16 16-7.2 16-16 16z'/%3E%3C/svg%3E");
     pointer-events: none;
+    z-index: 0;
+}
+
+.messages-area > * {
+    position: relative;
+    z-index: 1;
 }
 
 .message-wrapper {
@@ -519,6 +531,7 @@ body {
     width: 100%;
     margin-bottom: 2px;
     animation: bubbleFadeIn 0.25s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
+    min-width: 0;
 }
 
 .message-wrapper.sent {
@@ -530,7 +543,7 @@ body {
 }
 
 .message-bubble {
-    max-width: 65%;
+    max-width: min(65%, 520px);
     padding: 6px 10px 8px 10px;
     font-size: 14.2px;
     line-height: 1.45;
@@ -539,6 +552,8 @@ body {
     word-break: break-word;
     display: inline-flex;
     flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .sent .message-bubble {
@@ -1639,6 +1654,14 @@ body.auth-page {
     max-width: 100%;
     border-radius: 8px;
     overflow: hidden;
+    min-width: 0;
+}
+
+.message-text {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .message-media-image {
@@ -1677,10 +1700,12 @@ body.auth-page {
     border: 1px solid var(--wa-doc-border);
     padding: 10px;
     border-radius: 8px;
-    width: 260px;
+    width: min(320px, 100%);
     text-decoration: none;
     color: var(--text-primary);
     transition: background 0.2s;
+    box-sizing: border-box;
+    min-width: 0;
 }
 
 .message-media-doc:hover {
@@ -1706,6 +1731,7 @@ body.light-mode .message-media-doc:hover {
 .doc-meta {
     flex: 1;
     overflow: hidden;
+    min-width: 0;
 }
 
 .doc-name {
