@@ -1743,7 +1743,7 @@ function toggleEmojiPicker() {
 
     if (picker.style.display === "none") {
         picker.style.display = "flex";
-        if (picker.innerHTML.trim() === "") {
+        if (picker.children.length === 0) {
             renderEmojiPicker();
         }
     } else {

@@ -75,10 +75,7 @@ body.light-mode ::-webkit-scrollbar-thumb:hover {
     background: rgba(0, 0, 0, 0.35);
 }
 
-body.light-mode .messages-area::before {
-    opacity: 0.06;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cpath fill='%23000000' d='M40 0C17.9 0 0 17.9 0 40s17.9 40 40 40 40-17.9 40-40S62.1 0 40 0zm0 72c-17.7 0-32-14.3-32-32S22.3 8 40 8s32 14.3 32 32-14.3 32-32 32zm0-56c-13.3 0-24 10.7-24 24s10.7 24 24 24 24-10.7 24-24-10.7-24-24-24zm0 40c-8.8 0-16-7.2-16-16s7.2-16 16-16 16 7.2 16 16-7.2 16-16 16z'/%3E%3C/svg%3E");
-}
+
 
 * {
     margin: 0;
@@ -501,24 +498,10 @@ body {
     flex-direction: column;
     gap: 8px;
     background-color: var(--bg-chat);
-    background-image: radial-gradient(circle at 0 0, rgba(255, 255, 255, 0.02) 0, transparent 28%), radial-gradient(circle at 100% 0, rgba(255, 255, 255, 0.015) 0, transparent 24%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cpath fill='%23ffffff' fill-opacity='1' d='M40 0C17.9 0 0 17.9 0 40s17.9 40 40 40 40-17.9 40-40S62.1 0 40 0zm0 72c-17.7 0-32-14.3-32-32S22.3 8 40 8s32 14.3 32 32-14.3 32-32 32zm0-56c-13.3 0-24 10.7-24 24s10.7 24 24 24 24-10.7 24-24-10.7-24-24-24zm0 40c-8.8 0-16-7.2-16-16s7.2-16 16-16 16 7.2 16 16-7.2 16-16 16z'/%3E%3C/svg%3E");
-    background-size: cover, cover, 80px 80px;
-    background-attachment: local, local, local;
     position: relative;
     min-height: 0;
     isolation: isolate;
     overscroll-behavior-y: contain;
-}
-
-/* Sublte Repeating WhatsApp Grid Background Doodle */
-.messages-area::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    opacity: 0.04;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cpath fill='%23ffffff' d='M40 0C17.9 0 0 17.9 0 40s17.9 40 40 40 40-17.9 40-40S62.1 0 40 0zm0 72c-17.7 0-32-14.3-32-32S22.3 8 40 8s32 14.3 32 32-14.3 32-32 32zm0-56c-13.3 0-24 10.7-24 24s10.7 24 24 24 24-10.7 24-24-10.7-24-24-24zm0 40c-8.8 0-16-7.2-16-16s7.2-16 16-16 16 7.2 16 16-7.2 16-16 16z'/%3E%3C/svg%3E");
-    pointer-events: none;
-    z-index: 0;
 }
 
 .messages-area > * {
@@ -669,6 +652,7 @@ body {
     padding: 8px;
     border-radius: 50%;
     transition: var(--transition);
+    flex-shrink: 0;
 }
 
 .btn-send {
