@@ -610,6 +610,10 @@ body {
     user-select: none;
 }
 
+.typing-status-bar:empty {
+    display: none;
+}
+
 /* Input Form Controls */
 .chat-input-area {
     background: var(--bg-panel);
