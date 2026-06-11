@@ -799,6 +799,8 @@ function selectChat(chatId, convoDetails = null) {
         if (convoDetails.isGroup) {
             leaveBtn.style.display = "block";
             if (groupInfoBtn) groupInfoBtn.style.display = "block";
+            if (document.getElementById("videoCallBtn")) document.getElementById("videoCallBtn").style.display = "none";
+            if (document.getElementById("audioCallBtn")) document.getElementById("audioCallBtn").style.display = "none";
             const memberNames = convoDetails.participants
                 .filter(p => p && p.mobileNumber)
                 .map(p => p.mobileNumber === currentMobileNumber ? "You" : p.name)
@@ -810,6 +812,8 @@ function selectChat(chatId, convoDetails = null) {
         } else {
             leaveBtn.style.display = "none";
             if (groupInfoBtn) groupInfoBtn.style.display = "none";
+            if (document.getElementById("videoCallBtn")) document.getElementById("videoCallBtn").style.display = "block";
+            if (document.getElementById("audioCallBtn")) document.getElementById("audioCallBtn").style.display = "block";
             const other = convoDetails.participants.find(p => p && p.mobileNumber && currentMobileNumber && p.mobileNumber !== currentMobileNumber);
             if (other) {
                 statusEl.textContent = other.isOnline ? "online" : `last seen ${formatLastSeen(other.lastSeen)}`;
@@ -2393,6 +2397,512 @@ socket.on("message-reacted", ({ chatId, messageId, reactions }) => {
                 };
                 reactionsList.appendChild(pill);
             });
+        }
+    }
+});
+
+// ============================================================================
+// WEBRTC CALLING SYSTEM
+// ============================================================================
+
+let localStream = null;
+let remoteStream = null;
+let peerConnection = null;
+let currentCallTargetId = null;
+let currentCallType = "audio"; // "audio" or "video"
+let isCallInitiator = false;
+let iceCandidateQueue = [];
+
+let ringtoneInterval = null;
+let ringtoneAudioCtx = null;
+
+function startRinging() {
+    if (ringtoneInterval) return;
+    try {
+        ringtoneAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        const playRing = () => {
+            if (!ringtoneAudioCtx) return;
+            const osc1 = ringtoneAudioCtx.createOscillator();
+            const osc2 = ringtoneAudioCtx.createOscillator();
+            const gain = ringtoneAudioCtx.createGain();
+            
+            osc1.type = "sine";
+            osc1.frequency.value = 440;
+            osc2.type = "sine";
+            osc2.frequency.value = 480;
+            
+            osc1.connect(gain);
+            osc2.connect(gain);
+            gain.connect(ringtoneAudioCtx.destination);
+            
+            const now = ringtoneAudioCtx.currentTime;
+            
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+            gain.gain.linearRampToValueAtTime(0, now + 0.4);
+            
+            gain.gain.linearRampToValueAtTime(0.2, now + 0.6);
+            gain.gain.linearRampToValueAtTime(0, now + 0.95);
+            
+            osc1.start(now);
+            osc2.start(now);
+            osc1.stop(now + 1.0);
+            osc2.stop(now + 1.0);
+        };
+
+        playRing();
+        ringtoneInterval = setInterval(playRing, 3000); 
+    } catch (e) {
+        console.error("Audio context failed to start ringing:", e);
+    }
+}
+
+function stopRinging() {
+    if (ringtoneInterval) {
+        clearInterval(ringtoneInterval);
+        ringtoneInterval = null;
+    }
+    if (ringtoneAudioCtx) {
+        try { ringtoneAudioCtx.close(); } catch(e){}
+        ringtoneAudioCtx = null;
+    }
+}
+
+const rtcConfig = {
+    iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" }
+    ]
+};
+
+// 1. Initiate Call
+async function initiateCall(type) {
+    if (!activeChatDetails || activeChatDetails.isGroup) return;
+    
+    const otherParticipant = activeChatDetails.participants.find(
+        p => p && p.mobileNumber && p.mobileNumber !== currentMobileNumber
+    );
+    if (!otherParticipant) return;
+    
+    currentCallTargetId = otherParticipant._id || otherParticipant.id;
+    currentCallType = type;
+    isCallInitiator = true;
+
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: type === "video"
+        });
+        
+        // Show Active Call Interface with Local Stream
+        showActiveCallInterface(type, otherParticipant, true);
+
+        // Notify server
+        socket.emit("call-user", {
+            recipientId: currentCallTargetId,
+            type: type,
+            callerName: currentName,
+            callerAvatar: "", 
+            callerMobile: currentMobileNumber
+        });
+        
+        startRinging(); 
+    } catch (err) {
+        console.error("Failed to get media devices", err);
+        let errorMsg = "Media access failed.";
+        if (err.name === "NotAllowedError") errorMsg = "Permission denied. Please allow camera/mic access.";
+        if (err.name === "NotFoundError") errorMsg = "No camera or microphone found on this device.";
+        if (err.name === "NotReadableError" || err.name === "TrackStartError") errorMsg = "Camera/Mic is already in use by another application/browser.";
+        
+        showToast(errorMsg, "danger");
+        cleanupCall();
+    }
+}
+
+// 2. Handle Incoming Call
+socket.on("incoming-call", ({ callerId, callerName, callerAvatar, callerMobile, type }) => {
+    currentCallTargetId = callerId;
+    currentCallType = type;
+    isCallInitiator = false;
+
+    // Show Incoming Call Modal
+    const modal = document.getElementById("incomingCallModal");
+    const nameEl = document.getElementById("callerName");
+    const typeEl = document.getElementById("callTypeText");
+    const avatarEl = document.getElementById("callerAvatar");
+
+    nameEl.textContent = callerName || callerMobile;
+    typeEl.textContent = `Incoming ${type === "video" ? "Video" : "Voice"} Call...`;
+    
+    const initials = (callerName || "U").substring(0, 2).toUpperCase();
+    avatarEl.innerHTML = initials;
+    avatarEl.className = "call-avatar preset-teal";
+
+    modal.style.display = "flex";
+    startRinging();
+});
+
+// 3. Accept Incoming Call
+async function acceptIncomingCall() {
+    stopRinging();
+    document.getElementById("incomingCallModal").style.display = "none";
+    
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: currentCallType === "video"
+        });
+
+        // Dummy participant object for UI
+        const dummyParticipant = { name: document.getElementById("callerName").textContent };
+        showActiveCallInterface(currentCallType, dummyParticipant, false);
+
+        socket.emit("call-response", { callerId: currentCallTargetId, status: "accepted" });
+        setupWebRTC();
+    } catch (err) {
+        console.error("Failed to get media devices", err);
+        let errorMsg = "Media access failed.";
+        if (err.name === "NotAllowedError") errorMsg = "Permission denied. Please allow camera/mic access.";
+        if (err.name === "NotFoundError") errorMsg = "No camera or microphone found on this device.";
+        if (err.name === "NotReadableError" || err.name === "TrackStartError") errorMsg = "Camera/Mic is already in use by another application/browser.";
+        
+        showToast(errorMsg, "danger");
+        socket.emit("call-response", { callerId: currentCallTargetId, status: "rejected", reason: errorMsg });
+        cleanupCall();
+    }
+}
+
+// 4. Reject Incoming Call
+function rejectIncomingCall() {
+    stopRinging();
+    document.getElementById("incomingCallModal").style.display = "none";
+    socket.emit("call-response", { callerId: currentCallTargetId, status: "rejected" });
+    cleanupCall();
+}
+
+// 5. Call Response Handlers
+socket.on("call-accepted", ({ responderId }) => {
+    if (responderId.toString() === currentCallTargetId.toString()) {
+        stopRinging();
+        showToast("Call Accepted", "success");
+        setupWebRTC();
+        createWebRTCOffer();
+    }
+});
+
+socket.on("call-rejected", ({ reason }) => {
+    stopRinging();
+    showToast(`Call Declined: ${reason}`, "danger");
+    cleanupCall();
+});
+
+// 6. Setup WebRTC Peer Connection
+function setupWebRTC() {
+    peerConnection = new RTCPeerConnection(rtcConfig);
+
+    // Add local tracks to peer connection
+    localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+    });
+
+    // Handle incoming remote tracks
+    peerConnection.ontrack = (event) => {
+        if (!remoteStream) {
+            remoteStream = new MediaStream();
+            const remoteVideo = document.getElementById("remoteVideo");
+            if (remoteVideo) {
+                remoteVideo.srcObject = remoteStream;
+                remoteVideo.play().catch(e => console.log("Video autoplay blocked:", e));
+            }
+        }
+        
+        // Prevent duplicate tracks
+        if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
+            remoteStream.addTrack(event.track);
+        }
+        
+        if (event.track.kind === "video") {
+            currentCallType = "video";
+            const audioPlaceholder = document.getElementById("audioCallPlaceholder");
+            const remoteVideo = document.getElementById("remoteVideo");
+            const localVideo = document.getElementById("localVideo");
+            if (audioPlaceholder) audioPlaceholder.style.display = "none";
+            if (remoteVideo) remoteVideo.style.display = "block";
+            if (localVideo) {
+                localVideo.style.display = "block";
+                localVideo.srcObject = localStream;
+            }
+        }
+        
+        // Once connected, update audio placeholder text
+        if (currentCallType === "audio") {
+            const statusEl = document.getElementById("activeCallStatus");
+            if (statusEl) statusEl.textContent = "00:01 Connected";
+        }
+    };
+
+    // Handle ICE candidates
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            socket.emit("webrtc-signal", {
+                targetId: currentCallTargetId,
+                signalData: { type: "ice-candidate", candidate: event.candidate }
+            });
+        }
+    };
+    
+    // Connection state changes
+    peerConnection.onconnectionstatechange = () => {
+        console.log("WebRTC State:", peerConnection.connectionState);
+        if (peerConnection.connectionState === "disconnected" || peerConnection.connectionState === "failed") {
+            cleanupCall();
+        }
+    };
+}
+
+async function processIceQueue() {
+    while (iceCandidateQueue.length > 0) {
+        const candidate = iceCandidateQueue.shift();
+        try {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+            console.error("Error adding queued ice candidate", e);
+        }
+    }
+}
+
+// 7. WebRTC Signaling Flow
+async function createWebRTCOffer() {
+    try {
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        socket.emit("webrtc-signal", {
+            targetId: currentCallTargetId,
+            signalData: { type: "offer", offer: offer }
+        });
+    } catch (err) {
+        console.error("Error creating offer:", err);
+    }
+}
+
+socket.on("webrtc-signal", async ({ senderId, signalData }) => {
+    if (senderId.toString() !== currentCallTargetId.toString() || !peerConnection) return;
+
+    try {
+        if (signalData.type === "offer") {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(signalData.offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit("webrtc-signal", {
+                targetId: currentCallTargetId,
+                signalData: { type: "answer", answer: answer }
+            });
+            processIceQueue();
+        } else if (signalData.type === "answer") {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(signalData.answer));
+            processIceQueue();
+        } else if (signalData.type === "ice-candidate") {
+            if (peerConnection.remoteDescription) {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(signalData.candidate));
+            } else {
+                iceCandidateQueue.push(signalData.candidate);
+            }
+        }
+    } catch (err) {
+        console.error("WebRTC Signaling Error:", err);
+    }
+});
+
+// 8. End Call and Cleanup
+function endActiveCall() {
+    if (currentCallTargetId) {
+        socket.emit("end-call", { targetId: currentCallTargetId });
+    }
+    cleanupCall();
+}
+
+socket.on("call-ended", ({ senderId }) => {
+    if (currentCallTargetId && senderId.toString() === currentCallTargetId.toString()) {
+        showToast("Call Ended", "info");
+        cleanupCall();
+    }
+});
+
+function cleanupCall() {
+    stopRinging();
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+    if (remoteStream) {
+        remoteStream.getTracks().forEach(track => track.stop());
+        remoteStream = null;
+    }
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+    }
+    currentCallTargetId = null;
+    isCallInitiator = false;
+    iceCandidateQueue = [];
+
+    // Reset UI
+    const incomingModal = document.getElementById("incomingCallModal");
+    const activeInterface = document.getElementById("activeCallInterface");
+    if(incomingModal) incomingModal.style.display = "none";
+    if(activeInterface) activeInterface.style.display = "none";
+    
+    const remoteVideo = document.getElementById("remoteVideo");
+    const localVideo = document.getElementById("localVideo");
+    if(remoteVideo) remoteVideo.srcObject = null;
+    if(localVideo) localVideo.srcObject = null;
+}
+
+// 9. UI Helpers for Call Interface
+function showActiveCallInterface(type, participant, isInitiator) {
+    const activeInterface = document.getElementById("activeCallInterface");
+    const localVideo = document.getElementById("localVideo");
+    const audioPlaceholder = document.getElementById("audioCallPlaceholder");
+    const remoteVideo = document.getElementById("remoteVideo");
+    
+    activeInterface.style.display = "flex";
+    
+    if (type === "video") {
+        localVideo.style.display = "block";
+        audioPlaceholder.style.display = "none";
+        remoteVideo.style.display = "block";
+        localVideo.srcObject = localStream;
+    } else {
+        localVideo.style.display = "none";
+        remoteVideo.style.display = "none";
+        audioPlaceholder.style.display = "flex";
+        
+        document.getElementById("activeCallName").textContent = participant.name || "User";
+        document.getElementById("activeCallStatus").textContent = isInitiator ? "Calling..." : "Connecting...";
+        
+        const avatarEl = document.getElementById("activeCallAvatar");
+        avatarEl.innerHTML = (participant.name || "U").substring(0,2).toUpperCase();
+        avatarEl.className = "call-avatar preset-blue";
+    }
+}
+
+// Toggle Mute
+function toggleCallMute() {
+    if (localStream) {
+        const audioTrack = localStream.getAudioTracks()[0];
+        if (audioTrack) {
+            audioTrack.enabled = !audioTrack.enabled;
+            const btn = document.getElementById("toggleMuteBtn");
+            if (!audioTrack.enabled) {
+                btn.style.background = "#ef4444";
+                showToast("Microphone Muted", "info");
+            } else {
+                btn.style.background = "rgba(255,255,255,0.1)";
+                showToast("Microphone Unmuted", "info");
+            }
+        }
+    }
+}
+
+// Toggle Video
+async function toggleCallVideo() {
+    if (!localStream) return;
+    
+    const btn = document.getElementById("toggleVideoBtn");
+
+    if (currentCallType === "audio") {
+        // WhatsApp style: request upgrade from other user
+        socket.emit("video-upgrade-request", { targetId: currentCallTargetId });
+        showToast("Requesting video upgrade...", "info");
+    } else {
+        const videoTrack = localStream.getVideoTracks()[0];
+        if (videoTrack) {
+            videoTrack.enabled = !videoTrack.enabled;
+            if (!videoTrack.enabled) {
+                btn.style.background = "#ef4444";
+                showToast("Camera Disabled", "info");
+            } else {
+                btn.style.background = "rgba(255,255,255,0.1)";
+                showToast("Camera Enabled", "info");
+            }
+        }
+    }
+}
+
+// ============================================================================
+// VIDEO UPGRADE LOGIC
+// ============================================================================
+
+socket.on("video-upgrade-request", ({ senderId }) => {
+    if (currentCallTargetId && senderId.toString() === currentCallTargetId.toString()) {
+        const modal = document.getElementById("videoUpgradeModal");
+        if (modal) modal.style.display = "flex";
+        playNotificationSound();
+    }
+});
+
+async function acceptVideoUpgrade() {
+    document.getElementById("videoUpgradeModal").style.display = "none";
+    
+    try {
+        const newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const videoTrack = newStream.getVideoTracks()[0];
+        localStream.addTrack(videoTrack);
+        
+        if (peerConnection) {
+            peerConnection.addTrack(videoTrack, localStream);
+            // Let the original requester create the offer to avoid glare and race conditions
+        }
+        
+        currentCallType = "video";
+        
+        document.getElementById("audioCallPlaceholder").style.display = "none";
+        document.getElementById("localVideo").style.display = "block";
+        document.getElementById("localVideo").srcObject = localStream;
+        document.getElementById("remoteVideo").style.display = "block";
+        document.getElementById("toggleVideoBtn").style.background = "rgba(255,255,255,0.1)";
+        
+        socket.emit("video-upgrade-response", { targetId: currentCallTargetId, status: "accepted" });
+    } catch (err) {
+        console.error("Error accepting video:", err);
+        showToast("Camera access denied or unavailable", "danger");
+        socket.emit("video-upgrade-response", { targetId: currentCallTargetId, status: "rejected" });
+    }
+}
+
+function rejectVideoUpgrade() {
+    document.getElementById("videoUpgradeModal").style.display = "none";
+    socket.emit("video-upgrade-response", { targetId: currentCallTargetId, status: "rejected" });
+}
+
+socket.on("video-upgrade-response", async ({ senderId, status }) => {
+    if (currentCallTargetId && senderId.toString() === currentCallTargetId.toString()) {
+        if (status === "accepted") {
+            try {
+                const newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const videoTrack = newStream.getVideoTracks()[0];
+                localStream.addTrack(videoTrack);
+                
+                if (peerConnection) {
+                    peerConnection.addTrack(videoTrack, localStream);
+                    createWebRTCOffer(); // Requester initiates renegotiation after both tracks are added
+                }
+                
+                currentCallType = "video";
+                document.getElementById("audioCallPlaceholder").style.display = "none";
+                document.getElementById("localVideo").style.display = "block";
+                document.getElementById("localVideo").srcObject = localStream;
+                document.getElementById("remoteVideo").style.display = "block";
+                document.getElementById("toggleVideoBtn").style.background = "rgba(255,255,255,0.1)";
+                
+                showToast("Video upgrade accepted", "success");
+            } catch (err) {
+                console.error("Error enabling video after accept:", err);
+                showToast("Camera access denied", "danger");
+            }
+        } else {
+            showToast("Video request declined", "info");
         }
     }
 });

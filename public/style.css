@@ -1839,3 +1839,76 @@ body.light-mode .message-media-doc:hover {
 .message-wrapper {
     margin-bottom: 24px !important;
 }
+
+/* ==========================================================================
+   Phase J: WebRTC Calling Interface Styles
+   ========================================================================== */
+
+/* Call Modal Overlay */
+.call-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(5px);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.call-modal-content {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 30px 40px;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    min-width: 300px;
+    animation: slideUpFade 0.3s ease-out;
+}
+
+@keyframes slideUpFade {
+    0% { transform: translateY(20px); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+@keyframes pulse-green {
+    0% { box-shadow: 0 0 0 0 rgba(0, 168, 132, 0.7); }
+    70% { box-shadow: 0 0 0 15px rgba(0, 168, 132, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 168, 132, 0); }
+}
+
+/* Active Call Interface */
+.active-call-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+}
+
+.call-controls-bar button {
+    transition: transform 0.2s, background 0.2s;
+}
+
+.call-controls-bar button:hover {
+    transform: scale(1.1);
+    background: rgba(255,255,255,0.2) !important;
+}
+
+.btn-call-reject:hover {
+    background: #dc2626 !important;
+}

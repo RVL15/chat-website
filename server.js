@@ -1121,6 +1121,85 @@ io.on("connection", async (socket) => {
         }
     });
 
+    // ----------------------------------------
+    // WEBRTC CALLING SYSTEM
+    // ----------------------------------------
+
+    // Initiate Call
+    socket.on("call-user", ({ recipientId, type, callerName, callerAvatar, callerMobile }) => {
+        const recipientSockets = onlineSockets.get(recipientId.toString());
+        if (recipientSockets) {
+            recipientSockets.forEach(sId => {
+                io.to(sId).emit("incoming-call", {
+                    callerId: userId,
+                    callerName,
+                    callerAvatar,
+                    callerMobile,
+                    type
+                });
+            });
+        } else {
+            // Recipient is offline
+            socket.emit("call-rejected", { reason: "User is offline" });
+        }
+    });
+
+    // Respond to Call
+    socket.on("call-response", ({ callerId, status }) => {
+        const callerSockets = onlineSockets.get(callerId.toString());
+        if (callerSockets) {
+            callerSockets.forEach(sId => {
+                if (status === "accepted") {
+                    io.to(sId).emit("call-accepted", { responderId: userId });
+                } else {
+                    io.to(sId).emit("call-rejected", { reason: "User declined" });
+                }
+            });
+        }
+    });
+
+    // WebRTC Signaling Exchange
+    socket.on("webrtc-signal", ({ targetId, signalData }) => {
+        const targetSockets = onlineSockets.get(targetId.toString());
+        if (targetSockets) {
+            targetSockets.forEach(sId => {
+                io.to(sId).emit("webrtc-signal", {
+                    senderId: userId,
+                    signalData
+                });
+            });
+        }
+    });
+
+    // End Call
+    socket.on("end-call", ({ targetId }) => {
+        const targetSockets = onlineSockets.get(targetId.toString());
+        if (targetSockets) {
+            targetSockets.forEach(sId => {
+                io.to(sId).emit("call-ended", { senderId: userId });
+            });
+        }
+    });
+
+    // Video Upgrade Signaling
+    socket.on("video-upgrade-request", ({ targetId }) => {
+        const targetSockets = onlineSockets.get(targetId.toString());
+        if (targetSockets) {
+            targetSockets.forEach(sId => {
+                io.to(sId).emit("video-upgrade-request", { senderId: userId });
+            });
+        }
+    });
+
+    socket.on("video-upgrade-response", ({ targetId, status }) => {
+        const targetSockets = onlineSockets.get(targetId.toString());
+        if (targetSockets) {
+            targetSockets.forEach(sId => {
+                io.to(sId).emit("video-upgrade-response", { senderId: userId, status });
+            });
+        }
+    });
+
     // Disconnect Action
     socket.on("disconnect", async () => {
         console.log(`🔴 Socket Disconnected: ${name} (${mobileNumber}) (${socket.id})`);
