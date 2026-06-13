@@ -91,7 +91,11 @@ async function login() {
         showToast("Login Successful! Redirecting...", "success");
 
         setTimeout(() => {
-            window.location.href = "chat.html";
+            if (data.mobileNumber === "0000000000") {
+                window.location.href = "portal.html";
+            } else {
+                window.location.href = "chat.html";
+            }
         }, 800);
 
     } catch (err) {

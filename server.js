@@ -14,7 +14,7 @@ const ChatRequest = require("./models/ChatRequest");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, { maxHttpBufferSize: 5e6 }); // 5MB
 
 /* MongoDB Connection */
 mongoose.connect(process.env.MONGO_URI);
@@ -96,10 +96,77 @@ mongoose.connection.on("error", (err) => {
 /* Middleware */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Disable caching for admin files to fix browser cache issues
+app.use((req, res, next) => {
+    if (req.path.endsWith(".html") || req.path.endsWith(".js") || req.path.includes("admin") || req.path.includes("dashboard")) {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+        res.setHeader("Surrogate-Control", "no-store");
+    }
+    next();
+});
+
 app.use(express.static("public"));
+
+// Force redirect portal.html to dashboard.html
+app.get("/portal.html", (req, res) => {
+    res.redirect("/dashboard.html");
+});
 
 /* Authentication Routes */
 app.use("/api/auth", authRoutes);
+
+/* Track active connections (UserId -> Set of socket.ids) */
+const onlineSockets = new Map();
+
+// Admin API endpoint to fetch users via standard HTTP
+app.get("/api/admin/users", async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
+            return res.status(401).json({ message: "No token provided" });
+        }
+        const token = authHeader.split(" ")[1];
+        
+        const jwt = require("jsonwebtoken");
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        const isAdmin = decoded && (decoded.isAdmin || decoded.mobileNumber === "0000000000");
+        if (!isAdmin) {
+            return res.status(403).json({ message: "Not authorized" });
+        }
+
+        const users = await User.find({}, "name mobileNumber isOnline lastLogin createdAt").sort({ createdAt: -1 }).maxTimeMS(5000);
+        
+        // Auto-backfill lastLogin for older users that don't have it
+        const now = new Date();
+        const userObjs = users.map(u => {
+            const uObj = u.toObject();
+            uObj.isAdmin = (uObj.mobileNumber === "0000000000");
+            
+            // Fix race condition: Overlay real-time synchronous online status from memory!
+            if (onlineSockets.has(u._id.toString()) && onlineSockets.get(u._id.toString()).size > 0) {
+                uObj.isOnline = true;
+            }
+
+            // If lastLogin is completely missing, give them a timestamp now so it doesn't say "Never"
+            if (!uObj.lastLogin) {
+                uObj.lastLogin = now;
+                // Optional: Fire and forget DB update to save it permanently
+                User.updateOne({ _id: u._id }, { lastLogin: now }).catch(e => console.log(e));
+            }
+            
+            return uObj;
+        });
+
+        res.json(userObjs);
+    } catch (err) {
+        console.error("API error fetching users:", err);
+        res.status(500).json({ message: "Server error: " + err.message });
+    }
+});
 
 /* Socket.IO Authentication Middleware */
 io.use((socket, next) => {
@@ -168,8 +235,6 @@ async function createPrivateChat(userAId, userBId) {
     }
 }
 
-/* Track active connections (UserId -> Set of socket.ids) */
-const onlineSockets = new Map();
 
 // Helper to determine message status (sent = 1 tick, delivered = 2 ticks, read = 2 blue ticks)
 function getMessageStatus(msg, chat, senderId) {
@@ -1145,14 +1210,14 @@ io.on("connection", async (socket) => {
     });
 
     // Respond to Call
-    socket.on("call-response", ({ callerId, status }) => {
+    socket.on("call-response", ({ callerId, status, reason }) => {
         const callerSockets = onlineSockets.get(callerId.toString());
         if (callerSockets) {
             callerSockets.forEach(sId => {
                 if (status === "accepted") {
                     io.to(sId).emit("call-accepted", { responderId: userId });
                 } else {
-                    io.to(sId).emit("call-rejected", { reason: "User declined" });
+                    io.to(sId).emit("call-rejected", { reason: reason || "User declined" });
                 }
             });
         }
@@ -1197,6 +1262,54 @@ io.on("connection", async (socket) => {
             targetSockets.forEach(sId => {
                 io.to(sId).emit("video-upgrade-response", { senderId: userId, status });
             });
+        }
+    });
+
+    // Admin: Get all users
+    socket.on("admin-get-users", async () => {
+        console.log("Admin get users hit by", socket.user?.name, socket.user?.mobileNumber);
+        const isAdmin = socket.user && (socket.user.isAdmin || socket.user.mobileNumber === "0000000000");
+        if (!isAdmin) {
+            console.log("User is not admin, aborting.");
+            return;
+        }
+        try {
+            console.log("Fetching users from DB...");
+            const users = await User.find({}, "name mobileNumber isOnline lastLogin createdAt")
+                                    .sort({ createdAt: -1 })
+                                    .maxTimeMS(5000); // Prevent infinite hang
+            console.log(`Found ${users.length} users in DB. Processing...`);
+            const userObjs = users.map(u => {
+                const uObj = u.toObject();
+                uObj.isAdmin = (uObj.mobileNumber === "0000000000");
+                return uObj;
+            });
+            console.log("Emitting admin-users-data to client...");
+            socket.emit("admin-users-data", JSON.parse(JSON.stringify(userObjs)));
+            console.log("Emit complete.");
+        } catch (err) {
+            console.error("Error fetching users for admin:", err);
+            socket.emit("admin-users-error", err.message);
+        }
+    });
+
+    // Admin: Delete user and their messages
+    socket.on("admin-delete-user", async (targetUserId) => {
+        const isAdmin = socket.user.isAdmin || socket.user.mobileNumber === "0000000000";
+        if (!isAdmin) return;
+        try {
+            const userToDelete = await User.findById(targetUserId);
+            if (!userToDelete) return;
+            
+            if (userToDelete.mobileNumber === "0000000000") return;
+
+            await Chat.updateMany({}, { $pull: { participants: targetUserId } });
+            await Message.deleteMany({ sender: targetUserId });
+            await User.findByIdAndDelete(targetUserId);
+            
+            socket.emit("admin-user-deleted", targetUserId);
+        } catch (err) {
+            console.error("Error deleting user:", err);
         }
     });
 

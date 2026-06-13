@@ -84,11 +84,18 @@ router.post("/login", async (req, res) => {
             });
         }
 
+        // Update last login timestamp
+        user.lastLogin = new Date();
+        await user.save();
+
+        const isAdmin = (user.mobileNumber === "0000000000");
+
         const token = jwt.sign(
             {
                 id: user._id,
                 mobileNumber: user.mobileNumber,
-                name: user.name
+                name: user.name,
+                isAdmin: isAdmin
             },
             process.env.JWT_SECRET,
             {
@@ -99,7 +106,8 @@ router.post("/login", async (req, res) => {
         res.json({
             token,
             mobileNumber: user.mobileNumber,
-            name: user.name
+            name: user.name,
+            isAdmin: isAdmin
         });
 
     } catch (err) {
@@ -109,4 +117,32 @@ router.post("/login", async (req, res) => {
         });
     }
 });
+
+// Reset Password (Mock OTP flow)
+router.post("/reset-password", async (req, res) => {
+    try {
+        const { mobileNumber, newPassword } = req.body;
+        
+        if (!mobileNumber || !newPassword) {
+            return res.status(400).json({ message: "Mobile number and new password required" });
+        }
+
+        const user = await User.findOne({ mobileNumber });
+        if (!user) {
+            return res.status(404).json({ message: "No account found with this mobile number" });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+        
+        user.password = hashedPassword;
+        await user.save();
+
+        res.json({ message: "Password updated successfully" });
+    } catch (err) {
+        console.error("Reset Password Error:", err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
 module.exports = router;

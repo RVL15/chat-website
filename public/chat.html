@@ -9,6 +9,13 @@
         // Check token state before compiling HTML
         if (!localStorage.getItem("token")) {
             window.location.href = "login.html";
+        } else {
+            try {
+                const payload = JSON.parse(atob(localStorage.getItem("token").split('.')[1]));
+                if (payload.mobileNumber === "0000000000") {
+                    window.location.href = "portal.html";
+                }
+            } catch(e) {}
         }
         // Load theme immediately to avoid visual flash
         if (localStorage.getItem("theme") === "light") {

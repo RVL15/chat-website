@@ -28,9 +28,9 @@ const UserSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
-    lastSeen: {
+    lastLogin: {
         type: Date,
-        default: Date.now
+        default: null
     }
 });
 

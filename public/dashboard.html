@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AeroChat - Admin Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            background-color: var(--bg-page);
+            color: var(--text-primary);
+            font-family: var(--font-family);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .admin-sidebar {
+            width: 260px;
+            background-color: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        .admin-header {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .admin-nav-item {
+            padding: 12px 16px;
+            border-radius: 8px;
+            background: var(--wa-green);
+            color: #111b21;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .admin-nav-item:hover {
+            filter: brightness(1.1);
+        }
+
+        .admin-main {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--bg-page);
+        }
+
+        .admin-top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .admin-title {
+            font-size: 28px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .logout-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+        }
+
+        .admin-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 0;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            width: 100%;
+        }
+
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        .admin-table th {
+            padding: 16px 20px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-color);
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        .admin-table td {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 14px;
+            color: var(--text-primary);
+            vertical-align: middle;
+        }
+
+        .admin-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .admin-table tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .user-info-cell {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 16px;
+            color: white;
+            flex-shrink: 0;
+        }
+
+        .user-details {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-name {
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .admin-badge {
+            background: var(--wa-green);
+            color: #111b21;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        .user-joined {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .btn-delete {
+            background: rgba(220, 38, 38, 0.1);
+            color: #ef4444;
+            border: 1px solid rgba(220, 38, 38, 0.2);
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-delete:hover {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .debug-panel {
+            background: rgba(220, 38, 38, 0.1);
+            color: #ef4444;
+            padding: 10px;
+            font-family: monospace;
+            border-bottom: 1px solid var(--border-color);
+        }
+    </style>
+</head>
+<body>
+    <aside class="admin-sidebar">
+        <div class="admin-header">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--wa-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            AeroChat Admin
+        </div>
+        <nav style="display: flex; flex-direction: column; gap: 8px;">
+            <div class="admin-nav-item">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+                User Management
+            </div>
+        </nav>
+    </aside>
+
+    <main class="admin-main">
+        <div class="admin-top-bar">
+            <div class="admin-title">Users</div>
+            <button class="logout-btn" onclick="logoutAdmin()">Logout</button>
+        </div>
+
+        <div class="admin-card">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Mobile Number</th>
+                        <th>Last Login</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="userTableBody">
+                    <!-- Users loaded dynamically -->
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let socket;
+        let token = localStorage.getItem("token");
+
+        if (!token) {
+            window.location.href = "/login.html";
+        } else {
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                if (payload.mobileNumber !== "0000000000" && !payload.isAdmin) {
+                    window.location.href = "/chat.html";
+                }
+            } catch(e) {
+                console.error("Token decode error: " + e.message);
+            }
+        }
+
+        function manualLoadUsers() {
+            fetchUsers();
+        }
+
+        try {
+            socket = io({
+                auth: { token }
+            });
+
+            socket.on("connect_error", (err) => {
+                console.error("Socket Connect Error: " + err.message);
+                if (err.message === "Authentication Error") {
+                    logoutAdmin();
+                }
+            });
+
+            socket.on("admin-user-deleted", (userId) => {
+                fetchUsers();
+            });
+
+            socket.on("presence-change", () => {
+                fetchUsers();
+            });
+        } catch(e) {
+            console.error("Socket setup error: " + e.message);
+        }
+
+        async function fetchUsers() {
+            try {
+                const response = await fetch("/api/admin/users", {
+                    method: "GET",
+                    headers: {
+                        "Authorization": "Bearer " + token
+                    }
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || "HTTP Error " + response.status);
+                }
+                
+                const users = await response.json();
+                renderUserTable(users);
+            } catch (err) {
+                console.error("HTTP Fetch failed: " + err.message);
+                alert("Failed to load users: " + err.message);
+            }
+        }
+
+        // Load users immediately on page load
+        fetchUsers();
+
+        function logoutAdmin() {
+            localStorage.removeItem("token");
+            localStorage.removeItem("mobileNumber");
+            localStorage.removeItem("name");
+            window.location.href = "login.html";
+        }
+
+        function deleteUser(userId, userName) {
+            if (confirm(`Are you sure you want to delete user '${userName}'?`)) {
+                socket.emit("admin-delete-user", userId);
+            }
+        }
+
+        function getAvatarColor(name) {
+            const colors = ['#00a884', '#ea4335', '#53bdeb', '#ff9f0a', '#a28089', '#8e8d8a'];
+            let hash = 0;
+            if (!name) return colors[0];
+            for (let i = 0; i < name.length; i++) {
+                hash = name.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            return colors[Math.abs(hash) % colors.length];
+        }
+
+        function renderUserTable(users) {
+            const tbody = document.getElementById("userTableBody");
+            if (!tbody) return;
+            tbody.innerHTML = "";
+            if (!Array.isArray(users)) return;
+
+            users.forEach(user => {
+                const initial = user.name ? user.name.charAt(0).toUpperCase() : '?';
+                const color = getAvatarColor(user.name || '');
+                const joinedDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString() : null;
+                
+                let statusHtml = user.isOnline 
+                    ? `<span style="color: var(--wa-green); font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                        <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--wa-green);"></div> Online
+                       </span>`
+                    : `<span style="color: var(--text-secondary);">Offline</span>`;
+
+                const isAdmin = user.isAdmin || user.mobileNumber === "0000000000";
+
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>
+                        <div class="user-info-cell">
+                            <div class="user-avatar" style="background-color: ${color}">${initial}</div>
+                            <div class="user-details">
+                                <div class="user-name">
+                                    ${user.name}
+                                    ${isAdmin ? '<span class="admin-badge">ADMIN</span>' : ''}
+                                </div>
+                                ${joinedDate ? `<div class="user-joined">Joined ${joinedDate}</div>` : ''}
+                            </div>
+                        </div>
+                    </td>
+                    <td>${user.mobileNumber}</td>
+                    <td>${user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Never'}</td>
+                    <td>${statusHtml}</td>
+                    <td>
+                        ${!isAdmin ? `<button class="btn-delete" onclick="deleteUser('${user._id}', '${user.name}')">Delete</button>` : ''}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    </script>
+</body>
+</html>
