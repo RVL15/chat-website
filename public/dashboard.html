@@ -5,6 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AeroChat - Admin Dashboard</title>
     <link rel="stylesheet" href="style.css">
+    <script src="theme.js"></script>
+    <script>
+        // Zero-FOUC Theme Pre-loader
+        const root = document.documentElement;
+        const mode = localStorage.getItem("themeMode") || "light";
+        if (mode === "light" || (mode === "system" && !window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            root.classList.add("light-mode");
+        }
+        if (localStorage.getItem("themePrimary")) {
+            root.style.setProperty("--primary", localStorage.getItem("themePrimary"));
+            root.style.setProperty("--primary-hover", localStorage.getItem("themeHover"));
+            root.style.setProperty("--wa-green", localStorage.getItem("themePrimary"));
+        }
+        const fontSizes = { 'small': '12px', 'medium': '14px', 'large': '16px' };
+        root.style.setProperty('--base-font-size', fontSizes[localStorage.getItem("themeFontSize")] || '14px');
+        root.style.setProperty('--compact-factor', localStorage.getItem("themeCompact") === "true" ? '0.75' : '1');
+        if (localStorage.getItem("themeAnimations") === "false") {
+            root.classList.add("no-animations");
+        }
+    </script>
     <style>
         body {
             background-color: var(--bg-page);
@@ -95,7 +115,8 @@
             border-radius: 12px;
             padding: 0;
             border: 1px solid var(--border-color);
-            overflow: hidden;
+            overflow-y: auto;
+            max-height: calc(100vh - 150px);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
             width: 100%;
         }
@@ -113,7 +134,10 @@
             letter-spacing: 1px;
             color: var(--text-secondary);
             border-bottom: 1px solid var(--border-color);
-            background: rgba(0, 0, 0, 0.1);
+            background: var(--bg-secondary);
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
 
         .admin-table td {
@@ -210,7 +234,7 @@
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--wa-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
             </svg>
-            AeroChat Admin
+            AeroAdmin
         </div>
         <nav style="display: flex; flex-direction: column; gap: 8px;">
             <div class="admin-nav-item">
@@ -226,9 +250,17 @@
     </aside>
 
     <main class="admin-main">
-        <div class="admin-top-bar">
+        <div class="admin-top-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; gap: 20px;">
             <div class="admin-title">Users</div>
-            <button class="logout-btn" onclick="logoutAdmin()">Logout</button>
+
+            <div style="display: flex; align-items: center; gap: 12px; margin-left: auto;">
+                <button class="btn-icon" onclick="openCustomizationPanel()" title="Appearance Settings" style="color: var(--text-secondary); background: transparent; border: none; cursor: pointer; padding: 6px; border-radius: 50%;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+                    </svg>
+                </button>
+                <button class="logout-btn" onclick="logoutAdmin()">Logout</button>
+            </div>
         </div>
 
         <div class="admin-card">
@@ -249,6 +281,10 @@
         </div>
     </main>
 
+    <!-- Alert Box for feedback -->
+    <div id="alert" class="alert-box" style="position: fixed; bottom: 20px; right: 20px; z-index: 1000; display: none;"></div>
+
+    <script src="theme.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script>
         let socket;

@@ -14,43 +14,7 @@ if (avatarEl) {
     avatarEl.innerHTML = `${currentName.substring(0, 2).toUpperCase()}<span class="status-dot"></span>`;
 }
 
-// Theme management logic
-function initTheme() {
-    const theme = localStorage.getItem("theme") || "dark";
-    const moonIcon = document.getElementById("themeMoonIcon");
-    const sunIcon = document.getElementById("themeSunIcon");
-
-    if (theme === "light") {
-        document.documentElement.classList.add("light-mode");
-        if (moonIcon) moonIcon.style.display = "none";
-        if (sunIcon) sunIcon.style.display = "block";
-    } else {
-        document.documentElement.classList.remove("light-mode");
-        if (moonIcon) moonIcon.style.display = "block";
-        if (sunIcon) sunIcon.style.display = "none";
-    }
-}
-
-function toggleTheme() {
-    const isLight = document.documentElement.classList.toggle("light-mode");
-    localStorage.setItem("theme", isLight ? "light" : "dark");
-    
-    const moonIcon = document.getElementById("themeMoonIcon");
-    const sunIcon = document.getElementById("themeSunIcon");
-    
-    if (isLight) {
-        if (moonIcon) moonIcon.style.display = "none";
-        if (sunIcon) sunIcon.style.display = "block";
-        showToast("Switched to Light Mode", "success");
-    } else {
-        if (moonIcon) moonIcon.style.display = "block";
-        if (sunIcon) sunIcon.style.display = "none";
-        showToast("Switched to Dark Mode", "success");
-    }
-}
-
-window.toggleTheme = toggleTheme;
-initTheme();
+// Theme logic moved to theme.js
 
 // Establish Socket connection
 const socket = io({

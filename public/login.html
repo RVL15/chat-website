@@ -5,14 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - AeroChat</title>
     <link rel="stylesheet" href="style.css">
+    <script src="theme.js"></script>
     <script>
         // Redirect to chat if already logged in
         if (localStorage.getItem("token")) {
             window.location.href = "chat.html";
         }
-        // Load theme immediately to avoid visual flash
-        if (localStorage.getItem("theme") === "light") {
-            document.documentElement.classList.add("light-mode");
+        
+        // Zero-FOUC Theme Pre-loader
+        const root = document.documentElement;
+        const mode = localStorage.getItem("themeMode") || "light";
+        if (mode === "light" || (mode === "system" && !window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            root.classList.add("light-mode");
+        }
+        if (localStorage.getItem("themePrimary")) {
+            root.style.setProperty("--primary", localStorage.getItem("themePrimary"));
+            root.style.setProperty("--primary-hover", localStorage.getItem("themeHover"));
+            root.style.setProperty("--wa-green", localStorage.getItem("themePrimary"));
+        }
+        const fontSizes = { 'small': '12px', 'medium': '14px', 'large': '16px' };
+        root.style.setProperty('--base-font-size', fontSizes[localStorage.getItem("themeFontSize")] || '14px');
+        root.style.setProperty('--compact-factor', localStorage.getItem("themeCompact") === "true" ? '0.75' : '1');
+        if (localStorage.getItem("themeAnimations") === "false") {
+            root.classList.add("no-animations");
         }
     </script>
 </head>
