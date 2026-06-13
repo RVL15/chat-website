@@ -821,10 +821,10 @@ function openGroupModal() {
         listEl.innerHTML = "";
         
         // Remove ourselves from selection list
-        const selectables = cachedOnlineUsers.filter(u => u && u.mobileNumber && currentMobileNumber && u.mobileNumber !== currentMobileNumber);
+        const selectables = cachedContacts.filter(c => c && c.mobileNumber && currentMobileNumber && c.mobileNumber !== currentMobileNumber);
 
         if (selectables.length === 0) {
-            listEl.innerHTML = `<div style="font-size:13px; color:var(--text-secondary); text-align:center; padding:10px;">No online users registered to add</div>`;
+            listEl.innerHTML = `<div style="font-size:13px; color:var(--text-secondary); text-align:center; padding:10px;">No contacts saved to add</div>`;
             return;
         }
 
@@ -2116,7 +2116,8 @@ function openGroupInfo() {
     count.textContent = `${activeChatDetails.participants.length} participants`;
 
     // Toggle admin options features display
-    const isAdmin = activeChatDetails.admin && currentUserId && activeChatDetails.admin.toString() === currentUserId.toString();
+    const adminParticipant = activeChatDetails.participants.find(p => p.id && activeChatDetails.admin && p.id.toString() === activeChatDetails.admin.toString());
+    const isAdmin = adminParticipant && adminParticipant.mobileNumber === currentMobileNumber;
     const adminSection = document.getElementById("adminSettingsSection");
     if (adminSection) {
         adminSection.style.display = isAdmin ? "block" : "none";
@@ -2143,14 +2144,15 @@ function renderGroupMembersList(members, adminId) {
     container.innerHTML = "";
 
     const currentAdminIdStr = adminId ? adminId.toString() : "";
-    const isMeAdmin = currentUserId && currentAdminIdStr === currentUserId.toString();
+    const adminParticipant = members.find(p => p.id && p.id.toString() === currentAdminIdStr);
+    const isMeAdmin = adminParticipant && adminParticipant.mobileNumber === currentMobileNumber;
 
     members.forEach(p => {
         const item = document.createElement("div");
         item.className = "member-item";
 
         const isThisMemberAdmin = p.id && p.id.toString() === currentAdminIdStr;
-        const isMeMember = currentUserId && p.id && p.id.toString() === currentUserId.toString();
+        const isMeMember = p.mobileNumber === currentMobileNumber;
 
         let avatarHTML = renderAvatar(p.profilePicture, p.name, "member-avatar");
 
@@ -2230,7 +2232,75 @@ function addGroupMember() {
         targetMobile: mobile
     });
     input.value = "";
+    const suggestionsContainer = document.getElementById("addGroupMemberSuggestions");
+    if (suggestionsContainer) suggestionsContainer.style.display = "none";
 }
+
+window.handleAddGroupMemberSearch = function(event) {
+    const input = event.target;
+    const suggestionsContainer = document.getElementById("addGroupMemberSuggestions");
+    if (!suggestionsContainer) return;
+
+    const query = input.value.trim().toLowerCase();
+    if (!query) {
+        suggestionsContainer.style.display = "none";
+        return;
+    }
+
+    const existingMobiles = activeChatDetails && activeChatDetails.participants ? activeChatDetails.participants.map(p => p.mobileNumber) : [];
+    
+    const matchingContacts = cachedContacts.filter(c => 
+        !existingMobiles.includes(c.mobileNumber) && 
+        (c.name.toLowerCase().includes(query) || (c.mobileNumber && c.mobileNumber.includes(query)))
+    );
+
+    if (matchingContacts.length === 0) {
+        suggestionsContainer.style.display = "none";
+        return;
+    }
+
+    suggestionsContainer.innerHTML = "";
+    matchingContacts.forEach(contact => {
+        const item = document.createElement("div");
+        item.style.padding = "8px 12px";
+        item.style.cursor = "pointer";
+        item.style.borderBottom = "1px solid var(--border-color)";
+        item.style.display = "flex";
+        item.style.alignItems = "center";
+        item.style.gap = "10px";
+        item.style.transition = "background-color 0.2s ease";
+        
+        item.onmouseenter = () => item.style.backgroundColor = "var(--bg-hover)";
+        item.onmouseleave = () => item.style.backgroundColor = "transparent";
+        
+        item.onclick = () => {
+            input.value = contact.mobileNumber;
+            suggestionsContainer.style.display = "none";
+            // Optional: you can call addGroupMember() here automatically if preferred
+            // addGroupMember();
+        };
+
+        const avatarHTML = renderAvatar(contact.profilePicture, contact.name, "member-avatar");
+        
+        item.innerHTML = `
+            <div style="transform: scale(0.85); transform-origin: left center; margin-right: -5px;">${avatarHTML}</div>
+            <div style="flex: 1;">
+                <div style="font-size: 13px; color: var(--text-primary); font-weight: 500;">${contact.name}</div>
+                <div style="font-size: 11px; color: var(--text-secondary);">${contact.mobileNumber}</div>
+            </div>
+        `;
+        suggestionsContainer.appendChild(item);
+    });
+
+    suggestionsContainer.style.display = "block";
+};
+
+document.addEventListener("click", (e) => {
+    const suggestionsContainer = document.getElementById("addGroupMemberSuggestions");
+    if (suggestionsContainer && !e.target.closest("#addGroupMemberMobile") && !e.target.closest("#addGroupMemberSuggestions")) {
+        suggestionsContainer.style.display = "none";
+    }
+});
 
 // 7. Extra Client Side Sockets bindings
 socket.on("group-settings-updated", ({ chatId, onlyAdminsCanMessage }) => {
@@ -2296,7 +2366,8 @@ socket.on("group-members-updated", ({ chatId, participants, admin }) => {
         const leaveBtn = document.getElementById("leaveGroupBtn");
         const groupInfoBtn = document.getElementById("groupInfoBtn");
 
-        const isAdmin = admin && currentUserId && admin.toString() === currentUserId.toString();
+        const adminParticipant = participants.find(p => p.id && admin && p.id.toString() === admin.toString());
+        const isAdmin = adminParticipant && adminParticipant.mobileNumber === currentMobileNumber;
         const restrictMessaging = activeChatDetails.onlyAdminsCanMessage && !isAdmin;
 
         // Re-check restricted input lock

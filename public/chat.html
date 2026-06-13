@@ -324,9 +324,12 @@
                     </label>
                 </div>
                 <div class="setting-item" style="margin-top: 15px;">
-                    <label style="font-size: 12.5px; color: var(--text-secondary); display: block; margin-bottom: 6px;">Add Member by Mobile Number</label>
-                    <div style="display: flex; gap: 8px;">
-                        <input type="text" id="addGroupMemberMobile" class="modal-input" placeholder="e.g. +19992223333" style="margin-bottom: 0; padding: 8px 12px; font-size: 13px; flex: 1;">
+                    <label style="font-size: 12.5px; color: var(--text-secondary); display: block; margin-bottom: 6px;">Add Member by Name or Mobile</label>
+                    <div style="display: flex; gap: 8px; position: relative;">
+                        <div style="flex: 1; position: relative;">
+                            <input type="text" id="addGroupMemberMobile" class="modal-input" placeholder="e.g. +19992223333 or John Doe" style="margin-bottom: 0; padding: 8px 12px; font-size: 13px; width: 100%; box-sizing: border-box;" oninput="handleAddGroupMemberSearch(event)" autocomplete="off">
+                            <div id="addGroupMemberSuggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--bg-secondary); border: 1px solid var(--border-color); border-top: none; border-radius: 0 0 8px 8px; max-height: 150px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 10px rgba(0,0,0,0.1);"></div>
+                        </div>
                         <button onclick="addGroupMember()" class="btn-send" style="width: auto; height: 35px; padding: 0 14px; border-radius: 8px; font-size: 13px; background: var(--wa-green); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; border: none; cursor: pointer;">Add</button>
                     </div>
                 </div>

@@ -886,9 +886,16 @@ io.on("connection", async (socket) => {
 
             if (action === "add") {
                 if (!targetMobile || !targetMobile.trim()) return;
-                const targetUser = await User.findOne({ mobileNumber: targetMobile.trim() });
+                const query = targetMobile.trim();
+                const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const targetUser = await User.findOne({
+                    $or: [
+                        { mobileNumber: query },
+                        { name: new RegExp(escapedQuery, 'i') }
+                    ]
+                });
                 if (!targetUser) {
-                    return socket.emit("error-message", "User with this mobile number not found");
+                    return socket.emit("error-message", "User not found");
                 }
 
                 if (chat.participants.some(p => p._id.toString() === targetUser._id.toString())) {
