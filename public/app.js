@@ -1314,6 +1314,11 @@ function appendMessage(data, isHistory = false, fragment = null) {
         const textNode = document.createElement("span");
         textNode.className = "message-text";
         textNode.textContent = data.message;
+        
+        const spacer = document.createElement("span");
+        spacer.className = "message-spacer";
+        textNode.appendChild(spacer);
+        
         bubble.appendChild(textNode);
     }
 

@@ -549,6 +549,7 @@ body {
     flex-direction: column;
     gap: 8px;
     background-color: var(--bg-chat);
+    background-image: url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M20 20.5V18H0v-2h20v-2H0v-2h20v-2H0V8h20V6H0V4h20V2H0V0h22v20h2V0h2v20h2V0h2v20h2V0h2v20h2V0h2v20h2v2H20v-1.5zM0 20h2v20H0V20zm4 0h2v20H4V20zm4 0h2v20H8V20zm4 0h2v20h-2V20zm4 0h2v20h-2V20zm4 4h20v2H20v-2zm0 4h20v2H20v-2zm0 4h20v2H20v-2zm0 4h20v2H20v-2z' fill='%236366f1' fill-opacity='0.04' fill-rule='evenodd'/%3E%3C/svg%3E");
     position: relative;
     min-height: 0;
     isolation: isolate;
@@ -605,17 +606,26 @@ body {
 }
 
 .message-bubble {
-    max-width: min(85%, 520px);
+    max-width: 65%; /* Desktop 65% */
     padding: 6px 7px 8px 9px;
     font-size: calc(14.5rem / 14);
     line-height: 19px;
     position: relative;
     box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
     word-break: break-word;
-    display: inline-flex;
-    flex-direction: column;
+    display: inline-block;
     min-width: 0;
     border-radius: 7.5px;
+}
+
+.message-text {
+    display: inline;
+}
+
+.message-spacer {
+    display: inline-block;
+    width: 65px; /* Space for time + ticks */
+    height: 10px;
 }
 
 .sent .message-bubble {
@@ -642,12 +652,13 @@ body {
 
 /* Message footer (time + ticks) */
 .message-footer {
-    display: inline-flex;
+    position: absolute;
+    bottom: 4px;
+    right: 7px;
+    display: flex;
     align-items: center;
-    align-self: flex-end;
-    margin-top: 4px;
-    position: relative;
-    bottom: -2px;
+    gap: 3px;
+    z-index: 2;
 }
 
 .message-time {
@@ -707,17 +718,27 @@ body {
     width: 100%;
     display: flex;
     align-items: flex-end;
-    gap: 12px;
+    gap: 8px;
 }
 
-.chat-input-wrapper textarea {
+.chat-input-pill {
     flex: 1;
-    padding: 12px 16px;
+    display: flex;
+    align-items: flex-end;
     background: var(--bg-chat);
+    border-radius: 24px;
+    padding: 2px 4px;
     border: 1px solid var(--border-color);
-    border-radius: 20px;
+    min-height: 44px;
+}
+
+.chat-input-pill textarea {
+    flex: 1;
+    padding: 10px 8px;
+    background: transparent;
+    border: none;
     color: var(--text-primary);
-    font-size: 14.5px;
+    font-size: 15px;
     line-height: 20px;
     outline: none;
     resize: none;
@@ -725,16 +746,34 @@ body {
     max-height: 120px;
     overflow-y: auto;
     box-sizing: border-box;
-    transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.chat-input-wrapper textarea:focus {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
-}
-
-.chat-input-wrapper textarea::placeholder {
+.chat-input-pill textarea::placeholder {
     color: var(--text-placeholder);
+}
+
+.chat-input-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--wa-green);
+    color: white;
+    flex-shrink: 0;
+}
+
+.btn-icon-fab {
+    background: transparent;
+    border: none;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
 }
 
 .btn-send, .btn-icon {
@@ -852,7 +891,7 @@ body {
     }
     
     .message-bubble {
-        max-width: 90%;
+        max-width: 80%;
     }
     
     .chat-input-area {
@@ -868,34 +907,21 @@ body {
     }
     
     .chat-input-wrapper {
-        display: flex;
-        align-items: flex-end;
-        justify-content: space-between;
-        gap: 12px;
-        width: 100%;
-        box-sizing: border-box;
+        gap: 6px;
     }
     
-    #emojiBtn, #attachmentBtn, #voiceNoteBtn, .btn-send {
-        width: 44px !important;
-        height: 44px !important;
-        padding: 10px !important;
+    #emojiBtn, #attachmentBtn {
+        width: 40px !important;
+        height: 40px !important;
+        padding: 8px !important;
         flex-shrink: 0;
         margin: 0 !important;
     }
     
-    #emojiBtn { order: 1; }
-    #attachmentBtn { order: 2; }
-    #message { 
-        order: 3; 
-        flex: 1; 
-        border-radius: 24px; 
-        padding: 12px 16px; 
-        font-size: 16px; 
-        min-width: 0;
+    .chat-input-pill textarea {
+        font-size: 16px; /* prevent iOS zoom */
+        padding: 10px 4px;
     }
-    #voiceNoteBtn { order: 4; }
-    .btn-send { order: 4; }
     
     .messages-area {
         padding-bottom: calc(100px + env(safe-area-inset-bottom)) !important;
@@ -903,7 +929,7 @@ body {
 }
 @media (max-width: 480px) {
     .message-bubble {
-        max-width: 95%;
+        max-width: 85%;
     }
     .chat-header { padding: 10px 12px; }
 }
