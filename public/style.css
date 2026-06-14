@@ -874,7 +874,7 @@ body {
     .btn-send { order: 4; }
     
     .messages-area {
-        padding-bottom: calc(70px + env(safe-area-inset-bottom)) !important;
+        padding-bottom: calc(100px + env(safe-area-inset-bottom)) !important;
     }
 }
 @media (max-width: 480px) {

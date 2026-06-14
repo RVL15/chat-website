@@ -975,6 +975,10 @@ function handleFileSelected(event) {
         if (preview) preview.style.display = "flex";
         const previewName = document.getElementById("filePreviewName");
         if (previewName) previewName.textContent = file.name;
+        
+        // Trigger input event to show send button
+        const msgInput = document.getElementById("message");
+        if (msgInput) msgInput.dispatchEvent(new Event("input"));
     };
     reader.readAsDataURL(file);
 }
@@ -985,6 +989,10 @@ function removeSelectedFile() {
     if (input) input.value = "";
     const preview = document.getElementById("filePreviewContainer");
     if (preview) preview.style.display = "none";
+    
+    // Trigger input event to revert to mic if input is empty
+    const msgInput = document.getElementById("message");
+    if (msgInput) msgInput.dispatchEvent(new Event("input"));
 }
 
 // Send message scoped by room ID
@@ -1007,6 +1015,11 @@ function sendMessage() {
     if (input) {
         input.value = "";
         input.focus();
+        // Reset mic/send toggle
+        const sendBtn = document.querySelector(".btn-send");
+        const voiceBtn = document.getElementById("voiceNoteBtn");
+        if (sendBtn) sendBtn.style.display = "none";
+        if (voiceBtn) voiceBtn.style.display = "flex";
     }
     removeSelectedFile();
     clearReply();
@@ -1033,7 +1046,20 @@ function clearReply() {
 // Scoped Typing status triggers
 const inputField = document.getElementById("message");
 if (inputField) {
-    inputField.addEventListener("input", () => {
+    inputField.addEventListener("input", (e) => {
+        // Toggle mic and send button
+        const val = e.target.value.trim();
+        const sendBtn = document.querySelector(".btn-send");
+        const voiceBtn = document.getElementById("voiceNoteBtn");
+        
+        if (val.length > 0 || typeof selectedFile !== 'undefined' && selectedFile) {
+            if (sendBtn) sendBtn.style.display = "flex";
+            if (voiceBtn) voiceBtn.style.display = "none";
+        } else {
+            if (sendBtn) sendBtn.style.display = "none";
+            if (voiceBtn) voiceBtn.style.display = "flex";
+        }
+
         if (!activeChatId) return;
         socket.emit("typing", { chatId: activeChatId, isTyping: true });
 
