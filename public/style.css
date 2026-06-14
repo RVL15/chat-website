@@ -901,9 +901,12 @@ body {
         position: fixed;
         left: 0;
         right: 0;
-        bottom: env(safe-area-inset-bottom);
+        bottom: 0;
         z-index: 9999;
-        padding: 10px 12px !important;
+        padding-top: 10px !important;
+        padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+        padding-left: 12px !important;
+        padding-right: 12px !important;
         background: var(--bg-panel);
         border-top: 1px solid var(--border-color);
         transition: bottom 0.1s ease-out; /* Smooth keyboard transition */
@@ -911,7 +914,7 @@ body {
     }
     
     .chat-input-wrapper {
-        gap: 6px;
+        gap: 8px;
     }
     
     #emojiBtn, #attachmentBtn {
