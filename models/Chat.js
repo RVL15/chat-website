@@ -31,4 +31,7 @@ const ChatSchema = new mongoose.Schema({
     }
 });
 
+// Indexes for fast chat loading
+ChatSchema.index({ participants: 1, lastMessageAt: -1 });
+
 module.exports = mongoose.model("Chat", ChatSchema);

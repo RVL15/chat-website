@@ -34,4 +34,7 @@ const UserSchema = new mongoose.Schema({
     }
 });
 
+// Indexes for fast user queries
+UserSchema.index({ isOnline: 1 });
+
 module.exports = mongoose.model("User", UserSchema);

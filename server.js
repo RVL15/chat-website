@@ -142,7 +142,7 @@ app.get("/api/admin/users", async (req, res) => {
             return res.status(403).json({ message: "Not authorized" });
         }
 
-        const users = await User.find({}, "name mobileNumber isOnline lastLogin createdAt").sort({ createdAt: -1 }).maxTimeMS(5000);
+        const users = await User.find({}, "name mobileNumber isOnline lastLogin createdAt").sort({ createdAt: -1 }).lean().maxTimeMS(5000);
         
         // Auto-backfill lastLogin for older users that don't have it
         const now = new Date();
@@ -354,7 +354,7 @@ io.on("connection", async (socket) => {
     socket.on("get-users-list", async () => {
         console.log(`📥 get-users-list requested by: ${name} (${mobileNumber})`);
         try {
-            const allUsers = await User.find({}, "name mobileNumber profilePicture isOnline lastSeen");
+            const allUsers = await User.find({}, "name mobileNumber profilePicture isOnline lastSeen").lean();
             console.log(`📤 Sending users-list to ${name}:`, allUsers.length, "users");
             socket.emit("users-list", allUsers);
         } catch (err) {
@@ -650,51 +650,68 @@ io.on("connection", async (socket) => {
     // Retrieve active conversation/chats list
     socket.on("get-conversations", async () => {
         try {
+            console.time(`get-conversations-${userId}`);
             const chats = await Chat.find({ participants: userId })
                 .populate("participants", "name mobileNumber profilePicture isOnline lastSeen")
-                .sort({ lastMessageAt: -1 });
+                .sort({ lastMessageAt: -1 })
+                .lean();
 
-            const conversations = await Promise.all(chats.map(async (chat) => {
-                const lastMsg = await Message.findOne({
-                    chat: chat._id,
-                    deletedFor: { $ne: userId }
-                })
-                .populate("sender", "name mobileNumber")
-                .sort({ createdAt: -1 });
-
-                const lastReadTime = (chat.lastRead && typeof chat.lastRead.get === "function") ? (chat.lastRead.get(userId) || new Date(0)) : new Date(0);
-                const unreadCount = await Message.countDocuments({
-                    chat: chat._id,
-                    createdAt: { $gt: lastReadTime },
-                    sender: { $ne: userId },
-                    deletedFor: { $ne: userId }
-                });
-
-                return {
-                    id: chat._id,
-                    isGroup: chat.isGroup,
-                    name: chat.name,
-                    participants: chat.participants.map(p => ({
-                        id: p._id,
-                        name: p.name,
-                        mobileNumber: p.mobileNumber,
-                        profilePicture: p.profilePicture || "",
-                        isOnline: p.isOnline,
-                        lastSeen: p.lastSeen
-                    })),
-                    admin: chat.admin,
-                    onlyAdminsCanMessage: chat.onlyAdminsCanMessage,
-                    lastMessage: lastMsg ? {
-                        sender: lastMsg.sender ? lastMsg.sender.name : "System",
-                        senderMobile: lastMsg.sender ? lastMsg.sender.mobileNumber : "",
-                        message: lastMsg.message,
-                        createdAt: lastMsg.createdAt
-                    } : null,
-                    unreadCount
-                };
+            const conversationsBasic = chats.map(chat => ({
+                id: chat._id,
+                isGroup: chat.isGroup,
+                name: chat.name,
+                participants: chat.participants.map(p => ({
+                    id: p._id,
+                    name: p.name,
+                    mobileNumber: p.mobileNumber,
+                    profilePicture: p.profilePicture || "",
+                    isOnline: p.isOnline,
+                    lastSeen: p.lastSeen
+                })),
+                admin: chat.admin,
+                onlyAdminsCanMessage: chat.onlyAdminsCanMessage,
+                lastMessage: null,
+                unreadCount: 0
             }));
 
-            socket.emit("conversations-list", conversations);
+            // Stage 1: Emit basic chats instantly
+            socket.emit("conversations-list", conversationsBasic);
+            console.timeEnd(`get-conversations-${userId}`);
+
+            // Stage 2: Fetch latest chat previews and unread counts in background
+            Promise.all(chats.map(async (chat) => {
+                try {
+                    const lastMsg = await Message.findOne({
+                        chat: chat._id,
+                        deletedFor: { $ne: userId }
+                    }).populate("sender", "name mobileNumber").sort({ createdAt: -1 }).lean();
+
+                    const lastReadTime = chat.lastRead && chat.lastRead[userId.toString()] ? new Date(chat.lastRead[userId.toString()]) : new Date(0);
+                    const unreadCount = await Message.countDocuments({
+                        chat: chat._id,
+                        createdAt: { $gt: lastReadTime },
+                        sender: { $ne: userId },
+                        deletedFor: { $ne: userId }
+                    });
+
+                    return {
+                        id: chat._id,
+                        lastMessage: lastMsg ? {
+                            sender: lastMsg.sender ? lastMsg.sender.name : "System",
+                            senderMobile: lastMsg.sender ? lastMsg.sender.mobileNumber : "",
+                            message: lastMsg.message,
+                            createdAt: lastMsg.createdAt
+                        } : null,
+                        unreadCount
+                    };
+                } catch (err) {
+                    return null;
+                }
+            })).then(updates => {
+                const validUpdates = updates.filter(u => u !== null);
+                socket.emit("conversations-previews", validUpdates);
+            });
+
         } catch (err) {
             console.error("Error loading conversations list:", err);
         }
@@ -754,7 +771,7 @@ io.on("connection", async (socket) => {
 
             const participants = await User.find({
                 mobileNumber: { $in: participantMobiles.map(m => m.trim()) }
-            });
+            }).lean();
             const participantIds = participants.map(p => p._id);
 
             // Add creator ID
@@ -1003,6 +1020,7 @@ io.on("connection", async (socket) => {
     // Load Chat Message History
     socket.on("load-messages", async ({ chatId }) => {
         try {
+            console.time(`load-messages-${chatId}`);
             socket.activeChatId = chatId;
             const chat = await Chat.findOne({ _id: chatId, participants: userId })
                 .populate("participants", "name mobileNumber");
@@ -1022,7 +1040,8 @@ io.on("connection", async (socket) => {
             })
             .populate("sender", "name mobileNumber")
             .sort({ createdAt: 1 })
-            .limit(100);
+            .limit(20)
+            .lean();
 
             const list = messages.map(msg => {
                 const senderId = msg.sender ? msg.sender._id : null;
@@ -1042,6 +1061,7 @@ io.on("connection", async (socket) => {
 
             socket.emit("message-history", { chatId, messages: list });
             socket.emit("unread-updated", { chatId, unreadCount: 0 });
+            console.timeEnd(`load-messages-${chatId}`);
         } catch (err) {
             console.error("Error loading messages:", err);
         }
@@ -1284,10 +1304,10 @@ io.on("connection", async (socket) => {
             console.log("Fetching users from DB...");
             const users = await User.find({}, "name mobileNumber isOnline lastLogin createdAt")
                                     .sort({ createdAt: -1 })
-                                    .maxTimeMS(5000); // Prevent infinite hang
+                                    .lean();
             console.log(`Found ${users.length} users in DB. Processing...`);
             const userObjs = users.map(u => {
-                const uObj = u.toObject();
+                const uObj = u;
                 uObj.isAdmin = (uObj.mobileNumber === "0000000000");
                 return uObj;
             });

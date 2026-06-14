@@ -43,4 +43,8 @@ const MessageSchema = new mongoose.Schema({
     }
 });
 
+// Indexes for fast message loading
+MessageSchema.index({ chat: 1, createdAt: -1 });
+MessageSchema.index({ sender: 1 });
+
 module.exports = mongoose.model("Message", MessageSchema);

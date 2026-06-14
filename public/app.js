@@ -33,6 +33,7 @@ let cachedSearchResults = []; // global search results
 let typingUsers = new Set();
 let typingTimeout = null;
 let currentUserId = null;
+let lastRenderedDate = null;
 
 // Modal states
 let activeDeleteMessageId = null;
@@ -42,6 +43,17 @@ let activeDeleteIsMe = false;
 if ("Notification" in window && Notification.permission === "default") {
     Notification.requestPermission();
 }
+
+// Immediately load cached conversations to prevent blank sidebar
+document.addEventListener("DOMContentLoaded", () => {
+    const initCachedConvos = localStorage.getItem("cached_conversations");
+    if (initCachedConvos) {
+        try {
+            cachedConversations = JSON.parse(initCachedConvos);
+            renderConversations(cachedConversations);
+        } catch (e) {}
+    }
+});
 
 // Synthesize dynamic beep audio for new messages (asset-free notification ding)
 function playNotificationSound() {
@@ -138,11 +150,15 @@ function showToast(message, type = "info") {
 socket.on("connect", () => {
     console.log("Connected to Socket.IO successfully");
     showToast("Connected to AeroChat!", "success");
-    // Retrieve initial states
+    // Retrieve initial states (Critical)
     socket.emit("get-my-profile");
     socket.emit("get-conversations");
-    socket.emit("get-contacts");
-    socket.emit("get-chat-requests");
+
+    // Defer non-critical fetching to unblock initial load
+    setTimeout(() => {
+        socket.emit("get-contacts");
+        socket.emit("get-chat-requests");
+    }, 1000);
 });
 
 socket.on("connect_error", (err) => {
@@ -196,6 +212,14 @@ function switchSidebarTab(tabName) {
         if (chatsTab) chatsTab.classList.add("active");
         if (chatsList) chatsList.style.display = "block";
         if (searchInput) searchInput.placeholder = "Search conversations...";
+        // Load cached conversations instantly on startup
+        const cachedConvos = localStorage.getItem("cached_conversations");
+        if (cachedConvos) {
+            cachedConversations = JSON.parse(cachedConvos);
+            renderConversations(cachedConversations);
+        }
+
+        // Request fresh conversations list silently
         socket.emit("get-conversations");
     } else if (tabName === "contacts") {
         if (contactsTab) contactsTab.classList.add("active");
@@ -281,8 +305,12 @@ function renderAvatar(profilePicture, nameOrUsername, className = "avatar") {
 
 // Render active conversation cards list
 function renderConversations(convos) {
+    console.time("renderConversations");
     const container = document.getElementById("conversationsList");
-    if (!container) return;
+    if (!container) {
+        console.timeEnd("renderConversations");
+        return;
+    }
 
     container.innerHTML = "";
 
@@ -292,8 +320,11 @@ function renderConversations(convos) {
                 No chats found
             </div>
         `;
+        console.timeEnd("renderConversations");
         return;
     }
+
+    const fragment = document.createDocumentFragment();
 
     convos.forEach(convo => {
         const isSelected = activeChatId === convo.id;
@@ -360,8 +391,11 @@ function renderConversations(convos) {
         item.appendChild(avatar);
         item.appendChild(details);
         item.appendChild(meta);
-        container.appendChild(item);
+        fragment.appendChild(item);
     });
+
+    container.appendChild(fragment);
+    console.timeEnd("renderConversations");
 }
 
 // Render saved contacts (Phase D)
@@ -705,15 +739,30 @@ function selectChat(chatId, convoDetails = null) {
     // Toggle input field area
     document.getElementById("chatInputArea").style.display = "block";
     
-    // Reset message feed loading
-    const messagesFeed = document.getElementById("messages");
-    messagesFeed.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); font-size: 13.5px;">
-            Loading message history...
-        </div>
-    `;
+    // Reset date tracker
+    lastRenderedDate = null;
 
-    // Fetch messages from room
+    // Reset message feed loading or load from cache
+    const messagesFeed = document.getElementById("messages");
+    const cachedMessages = localStorage.getItem("chat_history_" + chatId);
+    if (cachedMessages) {
+        console.time("renderCachedMessages");
+        messagesFeed.innerHTML = "";
+        const messages = JSON.parse(cachedMessages);
+        const fragment = document.createDocumentFragment();
+        messages.forEach(msg => appendMessage(msg, true, fragment));
+        messagesFeed.appendChild(fragment);
+        scrollToBottom();
+        console.timeEnd("renderCachedMessages");
+    } else {
+        messagesFeed.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); font-size: 13.5px;">
+                Loading message history...
+            </div>
+        `;
+    }
+
+    // Fetch messages from room in background silently
     socket.emit("load-messages", { chatId });
 
     // Set Room Title & Headers
@@ -1047,9 +1096,28 @@ function confirmDelete(deleteType) {
 }
 
 // Append chat messages inside the feed (XSS-safe DOM construction)
-function appendMessage(data, isHistory = false) {
+function appendMessage(data, isHistory = false, fragment = null) {
     const container = document.getElementById("messages");
-    if (!container) return;
+    if (!container && !fragment) return;
+
+    // --- Date Separator Logic ---
+    const msgDateStr = data.createdAt || new Date().toISOString();
+    const msgDateObj = new Date(msgDateStr);
+    const msgDateKey = msgDateObj.toDateString();
+
+    if (lastRenderedDate !== msgDateKey) {
+        lastRenderedDate = msgDateKey;
+        const separatorWrapper = document.createElement("div");
+        separatorWrapper.className = "date-separator";
+        const separatorText = document.createElement("span");
+        separatorText.className = "date-separator-text";
+        separatorText.textContent = formatDateSeparatorText(msgDateStr);
+        separatorWrapper.appendChild(separatorText);
+
+        if (fragment) fragment.appendChild(separatorWrapper);
+        else container.appendChild(separatorWrapper);
+    }
+    // --- End Date Separator Logic ---
 
     // Check if it is a system message
     const isSystem = data.name === "System";
@@ -1067,7 +1135,8 @@ function appendMessage(data, isHistory = false) {
         sysBubble.className = "system-message";
         sysBubble.textContent = data.message;
         wrapper.appendChild(sysBubble);
-        container.appendChild(wrapper);
+        if (fragment) fragment.appendChild(wrapper);
+        else container.appendChild(wrapper);
         if (!isHistory) scrollToBottom();
         return;
     }
@@ -1387,7 +1456,8 @@ function appendMessage(data, isHistory = false) {
     }
 
     wrapper.appendChild(bubbleContainer);
-    container.appendChild(wrapper);
+    if (fragment) fragment.appendChild(wrapper);
+    else container.appendChild(wrapper);
 
     // Custom Voice Note Player wiring
     if (data.file && data.file.isVoiceNote) {
@@ -1475,6 +1545,30 @@ function formatTimeShort(dateStr) {
     }
 }
 
+function formatDateSeparatorText(dateStr) {
+    if (!dateStr) return "Today";
+    try {
+        const date = new Date(dateStr);
+        const now = new Date();
+        
+        const dateCopy = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        const nowCopy = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        const diffMs = nowCopy - dateCopy;
+        const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 0) {
+            return "Today";
+        } else if (diffDays === 1) {
+            return "Yesterday";
+        } else {
+            return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+        }
+    } catch (e) {
+        return "Today";
+    }
+}
+
 // Time formattings helpers
 function formatLastSeen(dateStr) {
     if (!dateStr) return "recently";
@@ -1514,9 +1608,18 @@ function updatePageTitleBadge() {
 
 // Socket Response Events List
 socket.on("conversations-list", (convos) => {
-    cachedConversations = convos;
-    renderConversations(convos);
-    updatePageTitleBadge();
+    const prevCached = localStorage.getItem("cached_conversations");
+    const newCached = JSON.stringify(convos);
+    
+    if (prevCached === newCached) {
+        cachedConversations = convos;
+        updatePageTitleBadge();
+    } else {
+        cachedConversations = convos;
+        localStorage.setItem("cached_conversations", newCached);
+        renderConversations(convos);
+        updatePageTitleBadge();
+    }
 
     // Re-resolve active details if open
     if (activeChatId) {
@@ -1541,6 +1644,26 @@ socket.on("conversations-list", (convos) => {
                 }
             }
         }
+    }
+});
+
+socket.on("conversations-previews", (updates) => {
+    let changed = false;
+    updates.forEach(update => {
+        const convo = cachedConversations.find(c => c.id === update.id);
+        if (convo) {
+            if (JSON.stringify(convo.lastMessage) !== JSON.stringify(update.lastMessage) || convo.unreadCount !== update.unreadCount) {
+                convo.lastMessage = update.lastMessage;
+                convo.unreadCount = update.unreadCount;
+                changed = true;
+            }
+        }
+    });
+
+    if (changed) {
+        localStorage.setItem("cached_conversations", JSON.stringify(cachedConversations));
+        renderConversations(cachedConversations);
+        updatePageTitleBadge();
     }
 });
 
@@ -1679,12 +1802,60 @@ socket.on("left-chat", ({ chatId }) => {
 });
 
 socket.on("message-history", ({ chatId, messages }) => {
-    if (activeChatId !== chatId) return;
-    const container = document.getElementById("messages");
-    if (container) container.innerHTML = "";
+    console.time("renderMessages");
+    const prevCached = localStorage.getItem("chat_history_" + chatId);
+    const newCached = JSON.stringify(messages);
     
-    messages.forEach(msg => appendMessage(msg, true));
-    scrollToBottom();
+    if (prevCached === newCached) {
+        console.timeEnd("renderMessages");
+        return;
+    }
+
+    // Always update cache
+    localStorage.setItem("chat_history_" + chatId, newCached);
+
+    if (activeChatId !== chatId) {
+        console.timeEnd("renderMessages");
+        return;
+    }
+    const container = document.getElementById("messages");
+    if (!container) {
+        console.timeEnd("renderMessages");
+        return;
+    }
+
+    // 1. Remove the "Loading message history..." spinner if it exists
+    const loader = container.querySelector("div[style*='align-items: center']");
+    if (loader && loader.textContent.includes("Loading")) {
+        loader.remove();
+    }
+
+    // 2. Remove any messages from DOM that no longer exist on server (deletions)
+    const validIds = new Set(messages.map(m => `msg-${m.id || m._id}`));
+    const existingBubbles = Array.from(container.querySelectorAll(".message-wrapper:not(.system)"));
+    existingBubbles.forEach(bubble => {
+        if (!validIds.has(bubble.id)) {
+            bubble.remove();
+        }
+    });
+
+    // 3. Only append missing messages to the fragment
+    const fragment = document.createDocumentFragment();
+    let hasNew = false;
+
+    messages.forEach(msg => {
+        const existingNode = document.getElementById(`msg-${msg.id || msg._id}`);
+        if (!existingNode) {
+            appendMessage(msg, true, fragment);
+            hasNew = true;
+        }
+    });
+
+    if (hasNew) {
+        container.appendChild(fragment);
+        scrollToBottom();
+    }
+    console.timeEnd("renderMessages");
 });
 
 socket.on("chat-message", (data) => {
