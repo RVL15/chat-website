@@ -545,6 +545,7 @@ body {
     flex: 1;
     overflow-y: auto;
     padding: 20px 5%;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -712,6 +713,7 @@ body {
     display: flex;
     align-items: center;
     border-top: 1px solid var(--border-color);
+    box-sizing: border-box;
 }
 
 .chat-input-wrapper {
@@ -719,6 +721,7 @@ body {
     display: flex;
     align-items: flex-end;
     gap: 8px;
+    box-sizing: border-box;
 }
 
 .chat-input-pill {
@@ -904,6 +907,7 @@ body {
         background: var(--bg-panel);
         border-top: 1px solid var(--border-color);
         transition: bottom 0.1s ease-out; /* Smooth keyboard transition */
+        box-sizing: border-box; /* Fix overflow */
     }
     
     .chat-input-wrapper {
@@ -924,7 +928,8 @@ body {
     }
     
     .messages-area {
-        padding-bottom: calc(100px + env(safe-area-inset-bottom)) !important;
+        padding: 10px 4% calc(100px + env(safe-area-inset-bottom)) 4% !important;
+        box-sizing: border-box;
     }
 }
 @media (max-width: 480px) {
