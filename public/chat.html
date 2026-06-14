@@ -253,7 +253,7 @@
                     </button>
                     <input type="file" id="mediaInput" style="display: none;" onchange="handleFileSelected(event)">
 
-                    <input id="message" type="text" placeholder="Type a message" autocomplete="off" oninput="handleMessageInput(event)">
+                    <textarea id="message" rows="1" placeholder="Type a message" autocomplete="off"></textarea>
                     
                     <!-- Voice Note Recorder Button -->
                     <button type="button" class="btn-icon" id="voiceNoteBtn" onclick="toggleVoiceRecording()" title="Record Voice Message" style="color: var(--text-secondary); width: 36px; height: 36px; padding: 6px;">

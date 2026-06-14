@@ -1014,6 +1014,7 @@ function sendMessage() {
     stopTyping();
     if (input) {
         input.value = "";
+        input.style.height = "auto"; // Reset height
         input.focus();
         // Reset mic/send toggle
         const sendBtn = document.querySelector(".btn-send");
@@ -1047,6 +1048,10 @@ function clearReply() {
 const inputField = document.getElementById("message");
 if (inputField) {
     inputField.addEventListener("input", (e) => {
+        // Auto-resize textarea
+        e.target.style.height = "auto";
+        e.target.style.height = (e.target.scrollHeight) + "px";
+
         // Toggle mic and send button
         const val = e.target.value.trim();
         const sendBtn = document.querySelector(".btn-send");
@@ -1072,6 +1077,13 @@ if (inputField) {
 
     inputField.addEventListener("blur", () => {
         stopTyping();
+    });
+
+    inputField.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
     });
 }
 
