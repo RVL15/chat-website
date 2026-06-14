@@ -3263,3 +3263,29 @@ window.addEventListener("beforeunload", () => {
         socket.emit("explicit-disconnect");
     }
 });
+
+// Visual Viewport API for Mobile Keyboard Chrome Android Fix
+if (window.visualViewport) {
+    const adjustComposer = () => {
+        if (window.innerWidth <= 768) {
+            const chatInputArea = document.getElementById("chatInputArea");
+            if (chatInputArea) {
+                // Determine how much the viewport shrank due to keyboard/bottom bar
+                const offset = window.innerHeight - window.visualViewport.height;
+                // If offset > 0, keyboard/bar is open. Lift the composer dynamically.
+                // We use Math.max to prevent negative bottom positioning
+                chatInputArea.style.bottom = Math.max(0, offset) + "px";
+                
+                // If keyboard opens, scroll to latest message
+                if (offset > 50) {
+                    const msgArea = document.getElementById("messages");
+                    if (msgArea) {
+                        msgArea.scrollTop = msgArea.scrollHeight;
+                    }
+                }
+            }
+        }
+    };
+    window.visualViewport.addEventListener("resize", adjustComposer);
+    window.visualViewport.addEventListener("scroll", adjustComposer);
+}
