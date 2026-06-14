@@ -147,7 +147,7 @@ app.get("/api/admin/users", async (req, res) => {
         // Auto-backfill lastLogin for older users that don't have it
         const now = new Date();
         const userObjs = users.map(u => {
-            const uObj = u.toObject();
+            const uObj = { ...u };
             uObj.isAdmin = (uObj.mobileNumber === "0000000000");
             
             // Fix race condition: Overlay real-time synchronous online status from memory!
