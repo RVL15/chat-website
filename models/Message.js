@@ -28,6 +28,11 @@ const MessageSchema = new mongoose.Schema({
         userName: String,
         emoji: String
     }],
+    replyTo: {
+        messageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message' },
+        senderName: String,
+        text: String
+    },
     deletedFor: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: "User"

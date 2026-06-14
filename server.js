@@ -14,7 +14,11 @@ const ChatRequest = require("./models/ChatRequest");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 5e6 }); // 5MB
+const io = new Server(server, { 
+    maxHttpBufferSize: 5e6, // 5MB
+    pingTimeout: 10000,
+    pingInterval: 5000
+});
 
 /* MongoDB Connection */
 mongoose.connect(process.env.MONGO_URI);
@@ -1031,7 +1035,8 @@ io.on("connection", async (socket) => {
                     createdAt: msg.createdAt,
                     status,
                     file: msg.file,
-                    reactions: msg.reactions || []
+                    reactions: msg.reactions || [],
+                    replyTo: msg.replyTo
                 };
             });
 
@@ -1043,7 +1048,7 @@ io.on("connection", async (socket) => {
     });
 
     // Scoped Chat Message Send
-    socket.on("chat-message", async ({ chatId, message, file }) => {
+    socket.on("chat-message", async ({ chatId, message, file, replyTo }) => {
         if (!chatId) return;
         const trimmedMsg = message ? message.trim() : "";
         if (!trimmedMsg && !file) return;
@@ -1063,7 +1068,8 @@ io.on("connection", async (socket) => {
                 chat: chatId,
                 sender: userId,
                 message: trimmedMsg,
-                file: file || undefined
+                file: file || undefined,
+                replyTo: replyTo || undefined
             });
             await msg.save();
 
@@ -1084,7 +1090,8 @@ io.on("connection", async (socket) => {
                 createdAt: msg.createdAt,
                 status,
                 file: msg.file,
-                reactions: []
+                reactions: [],
+                replyTo: msg.replyTo
             });
         } catch (err) {
             console.error("Error sending scoped message:", err);
@@ -1311,6 +1318,11 @@ io.on("connection", async (socket) => {
         } catch (err) {
             console.error("Error deleting user:", err);
         }
+    });
+
+    // Explicit disconnect from beforeunload
+    socket.on("explicit-disconnect", () => {
+        socket.disconnect(true);
     });
 
     // Disconnect Action

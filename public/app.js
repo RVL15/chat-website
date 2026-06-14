@@ -157,13 +157,7 @@ function logout() {
     window.location.href = "login.html";
 }
 
-// Mobile sidebar toggle
-function toggleSidebar() {
-    const sidebar = document.getElementById("appSidebar");
-    if (sidebar) {
-        sidebar.classList.toggle("active");
-    }
-}
+// Mobile sidebar toggle removed (was toggleSidebar)
 
 // Sidebar tab navigations
 function switchSidebarTab(tabName) {
@@ -425,7 +419,7 @@ function renderContacts(contacts) {
             e.stopPropagation();
             socket.emit("send-chat-request", { recipientId: contact.id });
             switchSidebarTab("chats");
-            toggleSidebar();
+            // toggleSidebar(); removed
         };
         actions.appendChild(chatBtn);
 
@@ -679,7 +673,7 @@ function renderSearchResults(results) {
                 e.stopPropagation();
                 socket.emit("start-private-chat", { recipientMobile: user.mobileNumber });
                 switchSidebarTab("chats");
-                toggleSidebar();
+                // toggleSidebar(); removed
             };
             actions.appendChild(chatBtn);
         }
@@ -794,12 +788,47 @@ function selectChat(chatId, convoDetails = null) {
         renderConversations(cachedConversations);
     }
 
-    // Close Mobile Drawer
-    const sidebar = document.getElementById("appSidebar");
-    if (sidebar && window.innerWidth <= 768) {
-        sidebar.classList.remove("active");
+    // Open chat pane on mobile
+    openChat(chatId);
+}
+
+// True WhatsApp Mobile Screen Navigation
+function openChat(chatId) {
+    if (window.innerWidth <= 768) {
+        const chatListScreen = document.getElementById("ChatListScreen");
+        const chatScreen = document.getElementById("ChatScreen");
+        
+        if (chatListScreen) chatListScreen.style.display = "none";
+        if (chatScreen) chatScreen.style.display = "flex";
     }
 }
+
+function backToChatList() {
+    activeChatId = null;
+    activeChatDetails = null;
+    
+    // Remove active markers in list
+    const items = document.querySelectorAll(".convo-item");
+    items.forEach(el => el.classList.remove("active"));
+    
+    // Reset Header
+    document.getElementById("activeChatTitle").textContent = "Select a Conversation";
+    document.getElementById("activeChatStatus").textContent = "Choose a contact to begin messaging";
+    
+    // Hide input area
+    document.getElementById("chatInputArea").style.display = "none";
+
+    // Navigate to ChatListScreen
+    if (window.innerWidth <= 768) {
+        const chatListScreen = document.getElementById("ChatListScreen");
+        const chatScreen = document.getElementById("ChatScreen");
+        
+        if (chatListScreen) chatListScreen.style.display = "flex";
+        if (chatScreen) chatScreen.style.display = "none";
+    }
+}
+
+window.backToChatList = backToChatList;
 
 // Leave group chat
 function leaveActiveGroup() {
@@ -875,6 +904,7 @@ function submitCreateGroup() {
 
 // Global selected file state
 let selectedFile = null;
+let replyingTo = null; // { id, text, senderName }
 
 function handleFileSelected(event) {
     const file = event.target.files[0];
@@ -920,7 +950,8 @@ function sendMessage() {
     socket.emit("chat-message", {
         chatId: activeChatId,
         message: messageText,
-        file: selectedFile || undefined
+        file: selectedFile || undefined,
+        replyTo: replyingTo || undefined
     });
     
     stopTyping();
@@ -929,6 +960,25 @@ function sendMessage() {
         input.focus();
     }
     removeSelectedFile();
+    clearReply();
+}
+
+function initReply(messageId, text, senderName) {
+    replyingTo = { id: messageId, text, senderName };
+    const preview = document.getElementById("replyPreviewContainer");
+    if (preview) {
+        document.getElementById("replyPreviewName").textContent = senderName;
+        document.getElementById("replyPreviewText").textContent = text;
+        preview.style.display = "flex";
+    }
+    const input = document.getElementById("message");
+    if (input) input.focus();
+}
+
+function clearReply() {
+    replyingTo = null;
+    const preview = document.getElementById("replyPreviewContainer");
+    if (preview) preview.style.display = "none";
 }
 
 // Scoped Typing status triggers
@@ -1025,6 +1075,25 @@ function appendMessage(data, isHistory = false) {
     const bubbleContainer = document.createElement("div");
     bubbleContainer.className = "message-bubble-container";
 
+    // Long-press detection for mobile menu
+    let pressTimer;
+    const startPress = (e) => {
+        if (e.touches && e.touches.length > 1) return;
+        pressTimer = setTimeout(() => {
+            if (window.navigator.vibrate) navigator.vibrate(50);
+            openMobileMessageMenu(data, isMe, bubbleContainer);
+        }, 500);
+        bubbleContainer.classList.add("pressing");
+    };
+    const cancelPress = () => {
+        clearTimeout(pressTimer);
+        bubbleContainer.classList.remove("pressing");
+    };
+    bubbleContainer.addEventListener("touchstart", startPress, { passive: true });
+    bubbleContainer.addEventListener("touchend", cancelPress);
+    bubbleContainer.addEventListener("touchmove", cancelPress, { passive: true });
+    bubbleContainer.addEventListener("touchcancel", cancelPress);
+
     const bubble = document.createElement("div");
     bubble.className = "message-bubble";
 
@@ -1034,6 +1103,17 @@ function appendMessage(data, isHistory = false) {
         nameLabel.className = "sender-name";
         nameLabel.textContent = data.name || data.mobileNumber || "Unknown";
         bubble.appendChild(nameLabel);
+    }
+
+    // Render Quoted Reply if present
+    if (data.replyTo && data.replyTo.text) {
+        const replyBlock = document.createElement("div");
+        replyBlock.className = "message-quoted-reply";
+        replyBlock.innerHTML = `
+            <div class="quoted-sender">${data.replyTo.senderName || "Unknown"}</div>
+            <div class="quoted-text">${data.replyTo.text}</div>
+        `;
+        bubble.appendChild(replyBlock);
     }
 
     // Media file rendering block
@@ -1210,6 +1290,23 @@ function appendMessage(data, isHistory = false) {
     if (data.id) {
         const hoverActions = document.createElement("div");
         hoverActions.className = "message-hover-actions";
+
+        // 0. Reply Button
+        const replyBtn = document.createElement("button");
+        replyBtn.type = "button";
+        replyBtn.className = "btn-bubble-action";
+        replyBtn.title = "Reply to message";
+        replyBtn.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 17 4 12 9 7"></polyline>
+                <path d="M20 18v-2a4 4 0 0 0-4-4H4"></path>
+            </svg>
+        `;
+        replyBtn.onclick = (e) => {
+            e.stopPropagation();
+            initReply(data.id, data.message || (data.file ? "Media" : "Message"), data.name || data.mobileNumber || "Unknown");
+        };
+        hoverActions.appendChild(replyBtn);
 
         // 1. React Button
         const reactBtn = document.createElement("button");
@@ -1702,8 +1799,8 @@ socket.on("presence-change", (data) => {
 socket.on("typing", (data) => {
     if (data.chatId !== activeChatId) return;
 
-    const typingBar = document.getElementById("typingStatus");
-    if (!typingBar) return;
+    const statusEl = document.getElementById("activeChatStatus");
+    if (!statusEl) return;
 
     if (data.isTyping) {
         typingUsers.add(data.name);
@@ -1711,15 +1808,35 @@ socket.on("typing", (data) => {
         typingUsers.delete(data.name);
     }
 
-    if (typingUsers.size === 0) {
-        typingBar.textContent = "";
-    } else if (typingUsers.size === 1) {
-        typingBar.textContent = `${Array.from(typingUsers)[0]} is typing...`;
-    } else if (typingUsers.size === 2) {
-        const arr = Array.from(typingUsers);
-        typingBar.textContent = `${arr[0]} and ${arr[1]} are typing...`;
+    if (typingUsers.size > 0) {
+        statusEl.style.color = "var(--wa-green)";
+        if (typingUsers.size === 1) {
+            statusEl.textContent = `${Array.from(typingUsers)[0]} is typing...`;
+        } else if (typingUsers.size === 2) {
+            const arr = Array.from(typingUsers);
+            statusEl.textContent = `${arr[0]} and ${arr[1]} are typing...`;
+        } else {
+            statusEl.textContent = "Multiple users are typing...";
+        }
     } else {
-        typingBar.textContent = "Multiple users are typing...";
+        statusEl.style.color = "var(--text-secondary)";
+        // Restore status text based on chat details
+        if (activeChatDetails) {
+            if (activeChatDetails.isGroup) {
+                const memberNames = activeChatDetails.participants
+                    .filter(p => p && p.mobileNumber)
+                    .map(p => p.mobileNumber === currentMobileNumber ? "You" : p.name)
+                    .join(", ");
+                statusEl.textContent = memberNames;
+            } else {
+                const other = activeChatDetails.participants.find(p => p && p.mobileNumber && currentMobileNumber && p.mobileNumber !== currentMobileNumber);
+                if (other) {
+                    statusEl.textContent = other.isOnline ? "online" : `last seen ${formatLastSeen(other.lastSeen)}`;
+                } else {
+                    statusEl.textContent = "online";
+                }
+            }
+        }
     }
 });
 
@@ -3057,5 +3174,92 @@ socket.on("video-upgrade-response", async ({ senderId, status }) => {
         } else {
             showToast("Video request declined", "info");
         }
+    }
+});
+
+// Mobile Message Long-Press Menu
+function openMobileMessageMenu(data, isMe, containerEl) {
+    // Remove any existing
+    const existing = document.getElementById("mobileMessageMenu");
+    if (existing) existing.remove();
+    const existingBackdrop = document.querySelector(".mobile-message-backdrop");
+    if (existingBackdrop) existingBackdrop.remove();
+
+    const menu = document.createElement("div");
+    menu.id = "mobileMessageMenu";
+    menu.className = "mobile-message-menu";
+    
+    // Backdrop
+    const backdrop = document.createElement("div");
+    backdrop.className = "mobile-message-backdrop";
+    backdrop.onclick = () => { menu.remove(); backdrop.remove(); };
+    
+    const content = document.createElement("div");
+    content.className = "mobile-message-content";
+
+    // Emojis row
+    const emojiRow = document.createElement("div");
+    emojiRow.className = "mobile-menu-emojis";
+    const emojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+    emojis.forEach(emoji => {
+        const btn = document.createElement("span");
+        btn.textContent = emoji;
+        btn.onclick = () => {
+            socket.emit("react-message", {
+                chatId: activeChatId,
+                messageId: data.id,
+                emoji: emoji
+            });
+            menu.remove(); backdrop.remove();
+        };
+        emojiRow.appendChild(btn);
+    });
+    content.appendChild(emojiRow);
+
+    // Reply
+    const replyBtn = document.createElement("button");
+    replyBtn.className = "mobile-menu-btn";
+    replyBtn.innerHTML = `Reply`;
+    replyBtn.onclick = () => {
+        initReply(data.id, data.message || (data.file ? "Media" : "Message"), data.name || data.mobileNumber || "Unknown");
+        menu.remove(); backdrop.remove();
+    };
+    content.appendChild(replyBtn);
+
+    // Forward
+    const fwdBtn = document.createElement("button");
+    fwdBtn.className = "mobile-menu-btn";
+    fwdBtn.innerHTML = `Forward`;
+    fwdBtn.onclick = () => {
+        openForwardModal(data);
+        menu.remove(); backdrop.remove();
+    };
+    content.appendChild(fwdBtn);
+
+    // Delete
+    const delBtn = document.createElement("button");
+    delBtn.className = "mobile-menu-btn delete";
+    delBtn.innerHTML = `Delete`;
+    delBtn.onclick = () => {
+        openDeleteModal(data.id, isMe);
+        menu.remove(); backdrop.remove();
+    };
+    content.appendChild(delBtn);
+
+    menu.appendChild(content);
+    document.body.appendChild(backdrop);
+    document.body.appendChild(menu);
+
+    // Trigger animation
+    setTimeout(() => {
+        menu.classList.add("show");
+        backdrop.classList.add("show");
+    }, 10);
+}
+
+// Ensure offline status when user closes tab or navigates away
+window.addEventListener("beforeunload", () => {
+    if (socket && socket.connected) {
+        socket.emit("explicit-disconnect");
     }
 });

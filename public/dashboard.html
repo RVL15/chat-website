@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AeroChat - Admin Dashboard</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
     <script src="theme.js"></script>
     <script>
         // Zero-FOUC Theme Pre-loader
@@ -226,6 +227,66 @@
             font-family: monospace;
             border-bottom: 1px solid var(--border-color);
         }
+
+        /* Responsive Dashboard Table (Cards on Mobile) */
+        @media (max-width: 768px) {
+            body { 
+                display: block; 
+                height: 100%; 
+                overflow-y: auto; 
+                padding-top: env(safe-area-inset-top); 
+            }
+            .admin-sidebar { 
+                width: 100%; 
+                height: auto; 
+                border-right: none; 
+                border-bottom: 1px solid var(--border-color); 
+                padding: 15px; 
+            }
+            .admin-main { 
+                padding: 15px; 
+                overflow-y: visible; 
+                display: block; 
+            }
+            .admin-top-bar { margin-bottom: 20px; flex-wrap: wrap; }
+            .admin-card { background: transparent; border: none; box-shadow: none; max-height: none; overflow: visible; margin-top: 16px; }
+            
+            .admin-table, .admin-table tbody, .admin-table tr, .admin-table td {
+                display: block;
+                width: 100%;
+                box-sizing: border-box;
+            }
+            .admin-table thead { display: none; }
+            .admin-table tr {
+                margin-bottom: 15px;
+                background: var(--bg-secondary);
+                border: 1px solid var(--border-color);
+                border-radius: 12px;
+                padding: 15px;
+                box-shadow: var(--shadow-sm);
+            }
+            .admin-table td {
+                padding: 8px 0;
+                border-bottom: 1px solid var(--border-color);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                text-align: right;
+            }
+            .admin-table td:last-child {
+                border-bottom: none;
+            }
+            .admin-table td::before {
+                content: attr(data-label);
+                font-weight: 600;
+                color: var(--text-secondary);
+                font-size: 12px;
+                text-transform: uppercase;
+                margin-right: 15px;
+                text-align: left;
+            }
+            .user-info-cell { justify-content: flex-end; width: 100%; }
+        }
     </style>
 </head>
 <body>
@@ -399,7 +460,7 @@
 
                 const tr = document.createElement("tr");
                 tr.innerHTML = `
-                    <td>
+                    <td data-label="User">
                         <div class="user-info-cell">
                             <div class="user-avatar" style="background-color: ${color}">${initial}</div>
                             <div class="user-details">
@@ -411,10 +472,10 @@
                             </div>
                         </div>
                     </td>
-                    <td>${user.mobileNumber}</td>
-                    <td>${user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Never'}</td>
-                    <td>${statusHtml}</td>
-                    <td>
+                    <td data-label="Mobile Number">${user.mobileNumber}</td>
+                    <td data-label="Last Login">${user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Never'}</td>
+                    <td data-label="Status">${statusHtml}</td>
+                    <td data-label="Actions">
                         ${!isAdmin ? `<button class="btn-delete" onclick="deleteUser('${user._id}', '${user.name}')">Delete</button>` : ''}
                     </td>
                 `;
