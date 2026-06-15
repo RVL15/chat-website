@@ -687,6 +687,7 @@ function renderSearchResults(results) {
 
 // Handle Chat Select room
 function selectChat(chatId, convoDetails = null) {
+    console.log("CHAT SELECTED", chatId);
     activeChatId = chatId;
     activeChatDetails = convoDetails;
 
@@ -1683,7 +1684,13 @@ socket.on("message-history", ({ chatId, messages }) => {
     const container = document.getElementById("messages");
     if (container) container.innerHTML = "";
     
-    messages.forEach(msg => appendMessage(msg, true));
+    console.log("MESSAGES RETURNED", messages.length);
+    let renderedCount = 0;
+    messages.forEach(msg => {
+        appendMessage(msg, true);
+        renderedCount++;
+    });
+    console.log("MESSAGES RENDERED", renderedCount);
     scrollToBottom();
 });
 

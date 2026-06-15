@@ -1021,7 +1021,7 @@ io.on("connection", async (socket) => {
                 deletedFor: { $ne: userId }
             })
             .populate("sender", "name mobileNumber")
-            .sort({ createdAt: 1 })
+            .sort({ createdAt: -1 })
             .limit(100);
 
             const list = messages.map(msg => {
@@ -1038,7 +1038,7 @@ io.on("connection", async (socket) => {
                     reactions: msg.reactions || [],
                     replyTo: msg.replyTo
                 };
-            });
+            }).reverse();
 
             socket.emit("message-history", { chatId, messages: list });
             socket.emit("unread-updated", { chatId, unreadCount: 0 });
