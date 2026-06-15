@@ -441,6 +441,11 @@
     <!-- Active Call Interface Overlay -->
     <div id="activeCallInterface" class="active-call-overlay" style="display: none;">
         <div class="call-video-container" style="position: relative; width: 100%; height: 100%;">
+            <!-- Network Quality Indicator -->
+            <div id="networkQualityIndicator" class="network-quality-indicator" style="display: none;" title="Network Quality">
+                <span class="network-dot" style="background: #10b981;"></span>
+                <span class="network-text">Good</span>
+            </div>
             <video id="remoteVideo" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover; background: #000; display: block;"></video>
             <video id="localVideo" autoplay playsinline muted style="position: absolute; bottom: 100px; right: 20px; width: 120px; height: 160px; object-fit: cover; border-radius: 12px; border: 2px solid rgba(255,255,255,0.2); box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 15;"></video>
             
@@ -453,7 +458,13 @@
         </div>
 
         <div class="call-controls-bar" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 15px; padding: 12px 24px; border-radius: 30px; background: rgba(0,0,0,0.6); backdrop-filter: blur(10px); z-index: 20;">
-            <button id="toggleMuteBtn" class="btn-icon" onclick="toggleCallMute()" style="width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer;">
+            <button id="toggleSpeakerBtn" class="btn-icon" onclick="toggleCallSpeaker()" title="Speaker" style="width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+            </button>
+            <button id="toggleMuteBtn" class="btn-icon" onclick="toggleCallMute()" title="Mute" style="width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
                     <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
@@ -461,10 +472,20 @@
                     <line x1="8" y1="23" x2="16" y2="23"></line>
                 </svg>
             </button>
-            <button id="toggleVideoBtn" class="btn-icon" onclick="toggleCallVideo()" style="width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer;">
+            <button id="toggleVideoBtn" class="btn-icon" onclick="toggleCallVideo()" title="Video" style="width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polygon points="23 7 16 12 23 17 23 7"></polygon>
                     <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                </svg>
+            </button>
+            <button id="switchCameraBtn" class="btn-icon" onclick="switchCamera()" title="Switch Camera" style="display: none; width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.1); color: white; align-items: center; justify-content: center; border: none; cursor: pointer;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                </svg>
+            </button>
+            <button id="fullscreenBtn" class="btn-icon" onclick="toggleCallFullscreen()" title="Fullscreen" style="width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
                 </svg>
             </button>
             <button class="btn-call-reject" onclick="endActiveCall()" style="width: 44px; height: 44px; border-radius: 50%; background: #ef4444; color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;">

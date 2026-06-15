@@ -2815,6 +2815,12 @@ let currentCallType = "audio"; // "audio" or "video"
 let isCallInitiator = false;
 let iceCandidateQueue = [];
 
+let callTimerInterval = null;
+let callDurationSeconds = 0;
+let callTimeoutTimer = null;
+let currentFacingMode = "user";
+let networkStatsInterval = null;
+
 let ringtoneInterval = null;
 let ringtoneAudioCtx = null;
 
@@ -2951,8 +2957,20 @@ async function initiateCall(type) {
         });
         
         startRinging(); 
+        callTimeoutTimer = setTimeout(() => {
+            if (currentCallTargetId) {
+                socket.emit("missed-call", { targetId: currentCallTargetId, type });
+                showToast("Call timed out", "info");
+                cleanupCall();
+            }
+        }, 45000);
     } catch (err) {
         console.warn("Failed to get media devices, falling back to dummy stream for local testing.", err);
+        if (err.name === 'NotAllowedError') {
+            showToast("Camera/Microphone Permission Denied.", "danger");
+            cleanupCall();
+            return;
+        }
         // Fallback to dummy stream for local testing
         const videoStream = createDummyStream();
         
@@ -2975,11 +2993,25 @@ async function initiateCall(type) {
         });
         
         startRinging();
+        
+        callTimeoutTimer = setTimeout(() => {
+            if (currentCallTargetId) {
+                socket.emit("missed-call", { targetId: currentCallTargetId, type });
+                showToast("Call timed out", "info");
+                cleanupCall();
+            }
+        }, 45000);
     }
 }
 
 // 2. Handle Incoming Call
 socket.on("incoming-call", ({ callerId, callerName, callerAvatar, callerMobile, type }) => {
+    if (currentCallTargetId !== null || peerConnection !== null) {
+        // User is currently busy
+        socket.emit("call-response", { callerId: callerId, status: "busy" });
+        return;
+    }
+
     currentCallTargetId = callerId;
     currentCallType = type;
     isCallInitiator = false;
@@ -3049,6 +3081,7 @@ function rejectIncomingCall() {
 socket.on("call-accepted", ({ responderId }) => {
     if (responderId.toString() === currentCallTargetId.toString()) {
         stopRinging();
+        clearTimeout(callTimeoutTimer);
         showToast("Call Accepted", "success");
         setupWebRTC();
         createWebRTCOffer();
@@ -3057,6 +3090,7 @@ socket.on("call-accepted", ({ responderId }) => {
 
 socket.on("call-rejected", ({ reason }) => {
     stopRinging();
+    clearTimeout(callTimeoutTimer);
     showToast(`Call Declined: ${reason}`, "danger");
     cleanupCall();
 });
@@ -3127,7 +3161,18 @@ function setupWebRTC() {
     // Connection state changes
     peerConnection.onconnectionstatechange = () => {
         console.log("WebRTC State:", peerConnection.connectionState);
-        if (peerConnection.connectionState === "disconnected" || peerConnection.connectionState === "failed") {
+        if (peerConnection.connectionState === "connected") {
+            startCallTimer();
+            startNetworkStatsPolling();
+            document.getElementById("networkQualityIndicator").style.display = "flex";
+            if (currentCallType === "video" && window.innerWidth < 768) {
+                document.getElementById("switchCameraBtn").style.display = "flex";
+            }
+        }
+        if (peerConnection.connectionState === "disconnected") {
+            showToast("Reconnecting...", "warning");
+        }
+        if (peerConnection.connectionState === "failed") {
             cleanupCall();
         }
     };
@@ -3215,6 +3260,14 @@ socket.on("call-ended", ({ senderId }) => {
 
 function cleanupCall() {
     stopRinging();
+    clearTimeout(callTimeoutTimer);
+    clearInterval(callTimerInterval);
+    clearInterval(networkStatsInterval);
+    
+    document.getElementById("networkQualityIndicator").style.display = "none";
+    const statusEl = document.getElementById("activeCallStatus");
+    if(statusEl) statusEl.textContent = "00:00";
+    
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;

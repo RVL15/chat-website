@@ -2535,6 +2535,39 @@ body, input, button, select, textarea {
     color: rgba(255, 255, 255, 0.85);
 }
 
+/* Network Quality Indicator */
+.network-quality-indicator {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: rgba(0,0,0,0.5);
+    padding: 6px 12px;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 20;
+    backdrop-filter: blur(5px);
+}
+.network-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #10b981; /* Green default */
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+}
+.network-text {
+    color: white;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* Call Control Active States */
+.btn-icon.active {
+    background: white !important;
+    color: #000 !important;
+}
+
 /* Mobile Long-Press Menu */
 .mobile-message-backdrop {
     position: fixed;

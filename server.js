@@ -1243,10 +1243,56 @@ io.on("connection", async (socket) => {
             callerSockets.forEach(sId => {
                 if (status === "accepted") {
                     io.to(sId).emit("call-accepted", { responderId: userId });
+                } else if (status === "busy") {
+                    io.to(sId).emit("call-rejected", { reason: "User is busy" });
                 } else {
                     io.to(sId).emit("call-rejected", { reason: reason || "User declined" });
                 }
             });
+        }
+    });
+
+    // Handle Missed Call
+    socket.on("missed-call", async ({ targetId, type }) => {
+        const targetSockets = onlineSockets.get(targetId.toString());
+        if (targetSockets) {
+            targetSockets.forEach(sId => {
+                io.to(sId).emit("missed-call", { type });
+            });
+        }
+        
+        try {
+            // Find the active 1on1 chat between these two users to log the missed call
+            const chat = await Chat.findOne({
+                isGroup: false,
+                participants: { $all: [userId, targetId] }
+            });
+            if (chat) {
+                const message = new Message({
+                    chatId: chat._id,
+                    sender: userId,
+                    message: `Missed ${type} call`,
+                    system: true
+                });
+                await message.save();
+                
+                chat.lastMessage = message._id;
+                await chat.save();
+                
+                const populatedMessage = await Message.findById(message._id).populate("sender", "name mobileNumber avatar");
+                
+                // Broadcast to target
+                if (targetSockets) {
+                    targetSockets.forEach(sId => io.to(sId).emit("new-message", populatedMessage));
+                }
+                // Broadcast to sender
+                const senderSockets = onlineSockets.get(userId.toString());
+                if (senderSockets) {
+                    senderSockets.forEach(sId => io.to(sId).emit("new-message", populatedMessage));
+                }
+            }
+        } catch (err) {
+            console.error("Error saving missed call message:", err);
         }
     });
 
