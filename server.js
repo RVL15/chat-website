@@ -1252,6 +1252,7 @@ io.on("connection", async (socket) => {
 
     // WebRTC Signaling Exchange
     socket.on("webrtc-signal", ({ targetId, signalData }) => {
+        console.log(`Server routed ${signalData.type} from ${userId} to ${targetId}`);
         const targetSockets = onlineSockets.get(targetId.toString());
         if (targetSockets) {
             targetSockets.forEach(sId => {

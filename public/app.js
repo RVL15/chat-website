@@ -2803,6 +2803,10 @@ socket.on("message-reacted", ({ chatId, messageId, reactions }) => {
 // WEBRTC CALLING SYSTEM
 // ============================================================================
 
+if (!window.isSecureContext) {
+    console.warn("WebRTC requires a secure context (HTTPS). Media devices may fail on HTTP.");
+}
+
 let localStream = null;
 let remoteStream = null;
 let peerConnection = null;
@@ -2869,8 +2873,27 @@ function stopRinging() {
 
 const rtcConfig = {
     iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" }
+        { 
+            urls: [
+                "stun:stun.l.google.com:19302",
+                "stun:stun1.l.google.com:19302"
+            ]
+        },
+        { 
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        },
+        { 
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        },
+        { 
+            urls: "turn:openrelay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        }
     ]
 };
 
@@ -3049,25 +3072,32 @@ function setupWebRTC() {
 
     // Handle incoming remote tracks
     peerConnection.ontrack = (event) => {
-        if (!remoteStream) {
-            remoteStream = new MediaStream();
-            const remoteVideo = document.getElementById("remoteVideo");
-            if (remoteVideo) {
+        console.log("REMOTE STREAM RECEIVED");
+        const remoteVideo = document.getElementById("remoteVideo");
+        const audioPlaceholder = document.getElementById("audioCallPlaceholder");
+        const localVideo = document.getElementById("localVideo");
+
+        if (event.streams && event.streams[0]) {
+            remoteStream = event.streams[0];
+            if (remoteVideo && remoteVideo.srcObject !== remoteStream) {
                 remoteVideo.srcObject = remoteStream;
-                remoteVideo.play().catch(e => console.log("Video autoplay blocked:", e));
+                remoteVideo.play().catch(e => console.error("Video autoplay blocked:", e));
             }
-        }
-        
-        // Prevent duplicate tracks
-        if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
-            remoteStream.addTrack(event.track);
+        } else {
+            if (!remoteStream) {
+                remoteStream = new MediaStream();
+                if (remoteVideo) {
+                    remoteVideo.srcObject = remoteStream;
+                    remoteVideo.play().catch(e => console.error("Video autoplay blocked:", e));
+                }
+            }
+            if (!remoteStream.getTracks().find(t => t.id === event.track.id)) {
+                remoteStream.addTrack(event.track);
+            }
         }
         
         if (event.track.kind === "video") {
             currentCallType = "video";
-            const audioPlaceholder = document.getElementById("audioCallPlaceholder");
-            const remoteVideo = document.getElementById("remoteVideo");
-            const localVideo = document.getElementById("localVideo");
             if (audioPlaceholder) audioPlaceholder.style.display = "none";
             if (remoteVideo) remoteVideo.style.display = "block";
             if (localVideo) {
@@ -3086,6 +3116,7 @@ function setupWebRTC() {
     // Handle ICE candidates
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
+            console.log("ICE GENERATED");
             socket.emit("webrtc-signal", {
                 targetId: currentCallTargetId,
                 signalData: { type: "ice-candidate", candidate: event.candidate }
@@ -3097,6 +3128,13 @@ function setupWebRTC() {
     peerConnection.onconnectionstatechange = () => {
         console.log("WebRTC State:", peerConnection.connectionState);
         if (peerConnection.connectionState === "disconnected" || peerConnection.connectionState === "failed") {
+            cleanupCall();
+        }
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+        console.log("WebRTC ICE State:", peerConnection.iceConnectionState);
+        if (peerConnection.iceConnectionState === "failed") {
             cleanupCall();
         }
     };
@@ -3118,6 +3156,7 @@ async function createWebRTCOffer() {
     try {
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
+        console.log("OFFER SENT");
         socket.emit("webrtc-signal", {
             targetId: currentCallTargetId,
             signalData: { type: "offer", offer: offer }
@@ -3132,19 +3171,23 @@ socket.on("webrtc-signal", async ({ senderId, signalData }) => {
 
     try {
         if (signalData.type === "offer") {
+            console.log("OFFER RECEIVED");
             await peerConnection.setRemoteDescription(new RTCSessionDescription(signalData.offer));
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
+            console.log("ANSWER SENT");
             socket.emit("webrtc-signal", {
                 targetId: currentCallTargetId,
                 signalData: { type: "answer", answer: answer }
             });
             processIceQueue();
         } else if (signalData.type === "answer") {
+            console.log("ANSWER RECEIVED");
             await peerConnection.setRemoteDescription(new RTCSessionDescription(signalData.answer));
             processIceQueue();
         } else if (signalData.type === "ice-candidate") {
-            if (peerConnection.remoteDescription) {
+            console.log("ICE RECEIVED");
+            if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
                 await peerConnection.addIceCandidate(new RTCIceCandidate(signalData.candidate));
             } else {
                 iceCandidateQueue.push(signalData.candidate);
