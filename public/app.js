@@ -1696,24 +1696,30 @@ socket.on("message-history", ({ chatId, messages }) => {
 
 socket.on("chat-message", (data) => {
     const isTargetingActiveChat = activeChatId === data.chatId;
+    
+    // Always update cached conversation data
+    const idx = cachedConversations.findIndex(c => c.id === data.chatId);
+    if (idx !== -1) {
+        if (!isTargetingActiveChat) {
+            cachedConversations[idx].unreadCount = (cachedConversations[idx].unreadCount || 0) + 1;
+        }
+        cachedConversations[idx].lastMessage = {
+            sender: data.name,
+            message: data.message,
+            createdAt: data.createdAt
+        };
+        cachedConversations[idx].lastMessageAt = data.createdAt;
+        cachedConversations.sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
+        renderConversations(cachedConversations);
+    } else {
+        socket.emit("get-conversations");
+    }
+
     if (isTargetingActiveChat) {
         appendMessage(data, false);
         socket.emit("mark-read", { chatId: activeChatId });
     } else {
-        const idx = cachedConversations.findIndex(c => c.id === data.chatId);
-        if (idx !== -1) {
-            cachedConversations[idx].unreadCount = (cachedConversations[idx].unreadCount || 0) + 1;
-            cachedConversations[idx].lastMessage = {
-                sender: data.name,
-                message: data.message,
-                createdAt: data.createdAt
-            };
-            cachedConversations.sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
-            renderConversations(cachedConversations);
-            updatePageTitleBadge();
-        } else {
-            socket.emit("get-conversations");
-        }
+        updatePageTitleBadge();
         playNotificationSound();
         showBrowserNotification(`${data.name} (AeroChat)`, data.message);
     }
