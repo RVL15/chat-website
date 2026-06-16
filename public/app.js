@@ -329,7 +329,12 @@ function renderConversations(convos) {
         const preview = document.createElement("div");
         preview.className = "convo-preview";
         if (convo.lastMessage) {
-            preview.textContent = `${convo.lastMessage.sender}: ${convo.lastMessage.message}`;
+            let msgText = convo.lastMessage.message;
+            if (!msgText) {
+                if (convo.lastMessage.isVoiceNote) msgText = "🎤 Voice Note";
+                else if (convo.lastMessage.hasFile) msgText = "📎 Media";
+            }
+            preview.textContent = `${convo.lastMessage.sender}: ${msgText}`;
         } else {
             preview.textContent = "No messages yet";
             preview.style.fontStyle = "italic";
@@ -1706,10 +1711,12 @@ socket.on("chat-message", (data) => {
         cachedConversations[idx].lastMessage = {
             sender: data.name,
             message: data.message,
-            createdAt: data.createdAt
+            createdAt: data.createdAt,
+            hasFile: !!data.file,
+            isVoiceNote: data.file ? !!data.file.isVoiceNote : false
         };
-        cachedConversations[idx].lastMessageAt = data.createdAt;
-        cachedConversations.sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
+        cachedConversations[idx].lastMessageTime = data.createdAt;
+        cachedConversations.sort((a, b) => new Date(b.lastMessageTime || 0) - new Date(a.lastMessageTime || 0));
         renderConversations(cachedConversations);
     } else {
         socket.emit("get-conversations");

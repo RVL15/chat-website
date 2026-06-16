@@ -648,7 +648,7 @@ io.on("connection", async (socket) => {
         try {
             const chats = await Chat.find({ participants: userId })
                 .populate("participants", "name mobileNumber profilePicture isOnline lastSeen")
-                .sort({ lastMessageAt: -1 });
+                .sort({ lastMessageTime: -1, lastMessageAt: -1 });
 
             const conversations = await Promise.all(chats.map(async (chat) => {
                 const lastMsg = await Message.findOne({
@@ -680,11 +680,14 @@ io.on("connection", async (socket) => {
                     })),
                     admin: chat.admin,
                     onlyAdminsCanMessage: chat.onlyAdminsCanMessage,
+                    lastMessageTime: chat.lastMessageTime || chat.lastMessageAt || (lastMsg ? lastMsg.createdAt : null),
                     lastMessage: lastMsg ? {
                         sender: lastMsg.sender ? lastMsg.sender.name : "System",
                         senderMobile: lastMsg.sender ? lastMsg.sender.mobileNumber : "",
                         message: lastMsg.message,
-                        createdAt: lastMsg.createdAt
+                        createdAt: lastMsg.createdAt,
+                        hasFile: !!lastMsg.file,
+                        isVoiceNote: lastMsg.file ? !!lastMsg.file.isVoiceNote : false
                     } : null,
                     unreadCount
                 };
@@ -1076,6 +1079,8 @@ io.on("connection", async (socket) => {
 
             // Update chat meta
             chat.lastMessageAt = Date.now();
+            chat.lastMessageTime = msg.createdAt;
+            chat.updatedAt = msg.createdAt;
             if (!chat.lastRead) chat.lastRead = new Map();
             chat.lastRead.set(userId, new Date());
             await chat.save();

@@ -25,6 +25,14 @@ const ChatSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     },
+    lastMessageTime: {
+        type: Date,
+        default: Date.now
+    },
+    updatedAt: {
+        type: Date,
+        default: Date.now
+    },
     onlyAdminsCanMessage: {
         type: Boolean,
         default: false
