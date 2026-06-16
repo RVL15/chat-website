@@ -30,6 +30,7 @@ let cachedConversations = []; // active chat list items
 let cachedContacts = []; // saved contact items
 let cachedRequests = { incoming: [], outgoing: [] }; // incoming/outgoing requests
 let cachedSearchResults = []; // global search results
+let cachedMessagesMap = {}; // mapping of chatId to array of messages for instant load
 let typingUsers = new Set();
 let typingTimeout = null;
 let currentUserId = null;
@@ -711,16 +712,22 @@ function selectChat(chatId, convoDetails = null) {
     // Toggle input field area
     document.getElementById("chatInputArea").style.display = "block";
     
-    // Reset message feed loading
+    // Reset message feed loading or load from cache
     const messagesFeed = document.getElementById("messages");
-    messagesFeed.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); font-size: 13.5px;">
-            Loading message history...
-        </div>
-    `;
+    if (cachedMessagesMap[chatId]) {
+        messagesFeed.innerHTML = "";
+        cachedMessagesMap[chatId].forEach(msg => appendMessage(msg, true));
+        scrollToBottom();
+    } else {
+        messagesFeed.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); font-size: 13.5px;">
+                Loading message history...
+            </div>
+        `;
+    }
 
-    // Fetch messages from room
-    socket.emit("load-messages", { chatId });
+    // Fetch messages from room (Background sync)
+    socket.emit("load-messages", { chatId, offset: 0, limit: 50 });
 
     // Set Room Title & Headers
     const titleEl = document.getElementById("activeChatTitle");
@@ -953,11 +960,48 @@ function sendMessage() {
     
     if (!messageText && !selectedFile) return;
 
+    const tempId = "temp-" + Date.now();
+    const tempDate = new Date().toISOString();
+    
+    const tempMsg = {
+        id: tempId,
+        name: currentName,
+        mobileNumber: currentMobileNumber,
+        message: messageText,
+        createdAt: tempDate,
+        status: "pending",
+        file: selectedFile || undefined,
+        reactions: [],
+        replyTo: replyingTo || undefined
+    };
+
+    if (!cachedMessagesMap[activeChatId]) {
+        cachedMessagesMap[activeChatId] = [];
+    }
+    cachedMessagesMap[activeChatId].push(tempMsg);
+    appendMessage(tempMsg, false);
+
+    // Optimistically update sidebar
+    const idx = cachedConversations.findIndex(c => c.id === activeChatId);
+    if (idx !== -1) {
+        cachedConversations[idx].lastMessage = {
+            sender: currentName,
+            message: messageText,
+            createdAt: tempDate,
+            hasFile: !!selectedFile,
+            isVoiceNote: selectedFile ? !!selectedFile.isVoiceNote : false
+        };
+        cachedConversations[idx].lastMessageTime = tempDate;
+        cachedConversations.sort((a, b) => new Date(b.lastMessageTime || 0) - new Date(a.lastMessageTime || 0));
+        renderConversations(cachedConversations);
+    }
+
     socket.emit("chat-message", {
         chatId: activeChatId,
         message: messageText,
         file: selectedFile || undefined,
-        replyTo: replyingTo || undefined
+        replyTo: replyingTo || undefined,
+        tempId: tempId
     });
     
     stopTyping();
@@ -1228,10 +1272,18 @@ function appendMessage(data, isHistory = false) {
         const tickSpan = document.createElement("span");
         const isRead = data.status === "read";
         const isDelivered = data.status === "delivered" || isRead;
+        const isPending = data.status === "pending";
 
         tickSpan.className = `wa-ticks ${isRead ? "read" : ""}`;
 
-        if (isDelivered) {
+        if (isPending) {
+            tickSpan.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+            `;
+        } else if (isDelivered) {
             tickSpan.innerHTML = `
                 <svg width="16" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12"></polyline>
@@ -1684,28 +1736,90 @@ socket.on("left-chat", ({ chatId }) => {
     socket.emit("get-conversations");
 });
 
-socket.on("message-history", ({ chatId, messages }) => {
+socket.on("message-history", ({ chatId, messages, offset, limit }) => {
+    // Update local cache
+    if (!cachedMessagesMap[chatId] || offset === 0) {
+        cachedMessagesMap[chatId] = messages;
+    } else {
+        // Prepend older messages
+        cachedMessagesMap[chatId] = [...messages, ...cachedMessagesMap[chatId]];
+    }
+
     if (activeChatId !== chatId) return;
     const container = document.getElementById("messages");
-    if (container) container.innerHTML = "";
+    if (!container) return;
     
-    console.log("MESSAGES RETURNED", messages.length);
+    // Save scroll state if loading older messages
+    const oldScrollHeight = container.scrollHeight;
+    
+    container.innerHTML = "";
     let renderedCount = 0;
-    messages.forEach(msg => {
+    cachedMessagesMap[chatId].forEach(msg => {
         appendMessage(msg, true);
         renderedCount++;
     });
-    console.log("MESSAGES RENDERED", renderedCount);
-    scrollToBottom();
+    
+    if (offset === 0) {
+        scrollToBottom();
+    } else {
+        // Restore scroll position so user doesn't jump to bottom
+        container.scrollTop = container.scrollHeight - oldScrollHeight;
+    }
 });
 
 socket.on("chat-message", (data) => {
     const isTargetingActiveChat = activeChatId === data.chatId;
+
+    if (!cachedMessagesMap[data.chatId]) {
+        cachedMessagesMap[data.chatId] = [];
+    }
+
+    const existingMsgIndex = data.tempId 
+        ? cachedMessagesMap[data.chatId].findIndex(m => m.id === data.tempId)
+        : -1;
+
+    if (existingMsgIndex !== -1) {
+        // Update optimistic message
+        cachedMessagesMap[data.chatId][existingMsgIndex].id = data.id;
+        cachedMessagesMap[data.chatId][existingMsgIndex].status = data.status;
+        cachedMessagesMap[data.chatId][existingMsgIndex].createdAt = data.createdAt;
+        
+        // Update DOM ID if active
+        if (isTargetingActiveChat) {
+            const domEl = document.getElementById(`msg-${data.tempId}`);
+            if (domEl) {
+                domEl.id = `msg-${data.id}`;
+                const ticks = domEl.querySelector(".wa-ticks");
+                if (ticks) {
+                    ticks.innerHTML = `
+                        <svg width="16" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    `;
+                }
+            }
+        }
+    } else {
+        // Avoid duplicate appends if server already sent it
+        const duplicateCheck = cachedMessagesMap[data.chatId].find(m => m.id === data.id);
+        if (!duplicateCheck) {
+            cachedMessagesMap[data.chatId].push(data);
+            if (isTargetingActiveChat) {
+                appendMessage(data, false);
+                socket.emit("mark-read", { chatId: activeChatId });
+            } else {
+                updatePageTitleBadge();
+                playNotificationSound();
+                showBrowserNotification(`${data.name} (AeroChat)`, data.message);
+            }
+        }
+    }
     
     // Always update cached conversation data
     const idx = cachedConversations.findIndex(c => c.id === data.chatId);
     if (idx !== -1) {
-        if (!isTargetingActiveChat) {
+        // Only increment unread if not our message and we aren't viewing it
+        if (!isTargetingActiveChat && data.mobileNumber !== currentMobileNumber) {
             cachedConversations[idx].unreadCount = (cachedConversations[idx].unreadCount || 0) + 1;
         }
         cachedConversations[idx].lastMessage = {
@@ -1720,15 +1834,6 @@ socket.on("chat-message", (data) => {
         renderConversations(cachedConversations);
     } else {
         socket.emit("get-conversations");
-    }
-
-    if (isTargetingActiveChat) {
-        appendMessage(data, false);
-        socket.emit("mark-read", { chatId: activeChatId });
-    } else {
-        updatePageTitleBadge();
-        playNotificationSound();
-        showBrowserNotification(`${data.name} (AeroChat)`, data.message);
     }
 });
 
@@ -1811,9 +1916,21 @@ socket.on("presence-change", (data) => {
             });
         }
     }
-
-    // Refresh conversation participant presences
-    socket.emit("get-conversations");
+    // Refresh conversation participant presences locally instead of emitting get-conversations
+    let convoChanged = false;
+    cachedConversations.forEach(c => {
+        if (!c.isGroup) {
+            const p = c.participants.find(p => p.mobileNumber === data.mobileNumber);
+            if (p) {
+                p.isOnline = data.isOnline;
+                p.lastSeen = data.lastSeen;
+                convoChanged = true;
+            }
+        }
+    });
+    if (convoChanged && activeSidebarTab === "chats") {
+        renderConversations(cachedConversations);
+    }
 });
 
 socket.on("typing", (data) => {
@@ -3309,3 +3426,26 @@ if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", adjustComposer);
     window.visualViewport.addEventListener("scroll", adjustComposer);
 }
+
+// Add scroll event listener for message feed to trigger infinite scroll / pagination
+document.addEventListener('DOMContentLoaded', () => {
+    const messagesFeed = document.getElementById('messages');
+    if (messagesFeed) {
+        messagesFeed.addEventListener('scroll', () => {
+            if (messagesFeed.scrollTop <= 10 && activeChatId && cachedMessagesMap[activeChatId]) {
+                const currentCount = cachedMessagesMap[activeChatId].length;
+                if (!messagesFeed.dataset.loading) {
+                    messagesFeed.dataset.loading = 'true';
+                    socket.emit('load-messages', { 
+                        chatId: activeChatId, 
+                        offset: currentCount, 
+                        limit: 50 
+                    });
+                    setTimeout(() => {
+                        messagesFeed.dataset.loading = '';
+                    }, 500);
+                }
+            }
+        });
+    }
+});

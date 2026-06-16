@@ -1007,28 +1007,32 @@ io.on("connection", async (socket) => {
     });
 
     // Load Chat Message History
-    socket.on("load-messages", async ({ chatId }) => {
+    socket.on("load-messages", async ({ chatId, offset = 0, limit = 50 }) => {
         try {
             socket.activeChatId = chatId;
             const chat = await Chat.findOne({ _id: chatId, participants: userId })
                 .populate("participants", "name mobileNumber");
             if (!chat) return;
 
-            // Mark read
-            if (!chat.lastRead) chat.lastRead = new Map();
-            chat.lastRead.set(userId, new Date());
-            await chat.save();
-
-            // Broadcast read receipt update
-            socket.to(chatId).emit("messages-read", { chatId, readerId: userId });
+            if (offset === 0) {
+                // Mark read
+                if (!chat.lastRead) chat.lastRead = new Map();
+                chat.lastRead.set(userId, new Date());
+                await chat.save();
+                // Broadcast read receipt update
+                socket.to(chatId).emit("messages-read", { chatId, readerId: userId });
+            }
 
             const messages = await Message.find({
                 chat: chatId,
                 deletedFor: { $ne: userId }
             })
             .populate("sender", "name mobileNumber")
-            .sort({ createdAt: 1 })
-            .limit(100);
+            .sort({ createdAt: -1 })
+            .skip(offset)
+            .limit(limit);
+
+            messages.reverse();
 
             const list = messages.map(msg => {
                 const senderId = msg.sender ? msg.sender._id : null;
@@ -1045,15 +1049,17 @@ io.on("connection", async (socket) => {
                 };
             });
 
-            socket.emit("message-history", { chatId, messages: list });
-            socket.emit("unread-updated", { chatId, unreadCount: 0 });
+            socket.emit("message-history", { chatId, messages: list, offset, limit });
+            if (offset === 0) {
+                socket.emit("unread-updated", { chatId, unreadCount: 0 });
+            }
         } catch (err) {
             console.error("Error loading messages:", err);
         }
     });
 
     // Scoped Chat Message Send
-    socket.on("chat-message", async ({ chatId, message, file }) => {
+    socket.on("chat-message", async ({ chatId, message, file, tempId }) => {
         if (!chatId) return;
         const trimmedMsg = message ? message.trim() : "";
         if (!trimmedMsg && !file) return;
@@ -1096,7 +1102,8 @@ io.on("connection", async (socket) => {
                 createdAt: msg.createdAt,
                 status,
                 file: msg.file,
-                reactions: []
+                reactions: [],
+                tempId: tempId
             });
         } catch (err) {
             console.error("Error sending scoped message:", err);
