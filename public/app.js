@@ -31,6 +31,8 @@ let cachedContacts = []; // saved contact items
 let cachedRequests = { incoming: [], outgoing: [] }; // incoming/outgoing requests
 let cachedSearchResults = []; // global search results
 let cachedMessagesMap = {}; // mapping of chatId to array of messages for instant load
+let cachedChatDOMs = new Map(); // LRU Cache for rendered message DOM elements
+let preloadedChats = new Set(); // track which chats have been preloaded in background
 let typingUsers = new Set();
 let typingTimeout = null;
 let currentUserId = null;
@@ -280,55 +282,89 @@ function renderAvatar(profilePicture, nameOrUsername, className = "avatar") {
     return `<div class="${className}"><img src="${profilePicture}" alt="Avatar"></div>`;
 }
 
-// Render active conversation cards list
 function renderConversations(convos) {
     const container = document.getElementById("conversationsList");
     if (!container) return;
 
-    container.innerHTML = "";
-
     if (convos.length === 0) {
         container.innerHTML = `
-            <div style="padding: 20px; text-align: center; color: var(--text-secondary); font-size: 13px;">
+            <div style="padding: 20px; text-align: center; color: var(--text-secondary); font-size: 13px;" id="no-chats-msg">
                 No chats found
             </div>
         `;
         return;
     }
 
-    convos.forEach(convo => {
+    const activeIds = new Set();
+
+    // Enable CSS flexbox reordering on container
+    container.style.display = "flex";
+    container.style.flexDirection = "column";
+
+    convos.forEach((convo, index) => {
         const isSelected = activeChatId === convo.id;
         const name = getConversationName(convo);
         const hasUnread = convo.unreadCount > 0;
+        activeIds.add(convo.id);
 
-        const item = document.createElement("div");
-        item.className = `convo-item ${isSelected ? "active" : ""}`;
-        item.onclick = () => selectChat(convo.id, convo);
-
-        // Avatar
-        let avatarHTML = "";
-        if (convo.isGroup) {
-            avatarHTML = `<div class="convo-avatar preset-teal">${name.substring(0, 2).toUpperCase()}</div>`;
-        } else {
-            const other = convo.participants.find(p => p && p.mobileNumber && currentMobileNumber && p.mobileNumber !== currentMobileNumber);
-            avatarHTML = renderAvatar(other ? other.profilePicture : "", name, "convo-avatar");
-        }
+        let item = document.getElementById(`convo-node-${convo.id}`);
         
-        const avatarWrapper = document.createElement("div");
-        avatarWrapper.innerHTML = avatarHTML;
-        const avatar = avatarWrapper.firstElementChild;
+        if (!item) {
+            item = document.createElement("div");
+            item.id = `convo-node-${convo.id}`;
+            // Use pointer events for faster click detection
+            item.onpointerdown = () => selectChat(convo.id, convo);
+            
+            // Avatar
+            let avatarHTML = "";
+            if (convo.isGroup) {
+                avatarHTML = `<div class="convo-avatar preset-teal">${name.substring(0, 2).toUpperCase()}</div>`;
+            } else {
+                const other = convo.participants.find(p => p && p.mobileNumber && currentMobileNumber && p.mobileNumber !== currentMobileNumber);
+                avatarHTML = renderAvatar(other ? other.profilePicture : "", name, "convo-avatar");
+            }
+            const avatarWrapper = document.createElement("div");
+            avatarWrapper.innerHTML = avatarHTML;
+            const avatar = avatarWrapper.firstElementChild;
 
-        // Details block
-        const details = document.createElement("div");
-        details.className = "convo-details";
+            // Details block
+            const details = document.createElement("div");
+            details.className = "convo-details";
 
-        const title = document.createElement("div");
-        title.className = "convo-name";
-        title.textContent = name;
-        details.appendChild(title);
+            const title = document.createElement("div");
+            title.className = "convo-name";
+            title.textContent = name;
+            details.appendChild(title);
 
-        const preview = document.createElement("div");
-        preview.className = "convo-preview";
+            const preview = document.createElement("div");
+            preview.className = "convo-preview";
+            details.appendChild(preview);
+
+            // Meta block
+            const meta = document.createElement("div");
+            meta.className = "convo-meta";
+
+            const time = document.createElement("div");
+            time.className = "convo-time";
+            meta.appendChild(time);
+
+            const badge = document.createElement("div");
+            badge.className = "convo-badge";
+            badge.style.display = "none";
+            meta.appendChild(badge);
+
+            item.appendChild(avatar);
+            item.appendChild(details);
+            item.appendChild(meta);
+            
+            container.appendChild(item);
+        }
+
+        // Fast update properties
+        item.className = `convo-item ${isSelected ? "active" : ""}`;
+        item.style.order = index; // Reorder instantly via CSS
+
+        const preview = item.querySelector(".convo-preview");
         if (convo.lastMessage) {
             let msgText = convo.lastMessage.message;
             if (!msgText) {
@@ -336,37 +372,34 @@ function renderConversations(convos) {
                 else if (convo.lastMessage.hasFile) msgText = "📎 Media";
             }
             preview.textContent = `${convo.lastMessage.sender}: ${msgText}`;
+            preview.style.fontStyle = "normal";
         } else {
             preview.textContent = "No messages yet";
             preview.style.fontStyle = "italic";
         }
-        details.appendChild(preview);
 
-        // Meta block
-        const meta = document.createElement("div");
-        meta.className = "convo-meta";
+        const time = item.querySelector(".convo-time");
+        time.textContent = convo.lastMessage ? formatTimeShort(convo.lastMessage.createdAt) : "";
 
-        const time = document.createElement("div");
-        time.className = "convo-time";
-        if (convo.lastMessage) {
-            time.textContent = formatTimeShort(convo.lastMessage.createdAt);
-        } else {
-            time.textContent = "";
-        }
-        meta.appendChild(time);
-
-        // Unread Badge
+        const badge = item.querySelector(".convo-badge");
         if (hasUnread) {
-            const badge = document.createElement("div");
-            badge.className = "convo-badge";
             badge.textContent = convo.unreadCount;
-            meta.appendChild(badge);
+            badge.style.display = "flex";
+        } else {
+            badge.style.display = "none";
         }
+    });
 
-        item.appendChild(avatar);
-        item.appendChild(details);
-        item.appendChild(meta);
-        container.appendChild(item);
+    // Cleanup old nodes
+    Array.from(container.children).forEach(child => {
+        if (child.id && child.id.startsWith("convo-node-")) {
+            const id = child.id.replace("convo-node-", "");
+            if (!activeIds.has(id)) {
+                child.remove();
+            }
+        } else if (child.id === "no-chats-msg") {
+            child.remove();
+        }
     });
 }
 
@@ -714,16 +747,48 @@ function selectChat(chatId, convoDetails = null) {
     
     // Reset message feed loading or load from cache
     const messagesFeed = document.getElementById("messages");
-    if (cachedMessagesMap[chatId]) {
-        messagesFeed.innerHTML = "";
-        cachedMessagesMap[chatId].forEach(msg => appendMessage(msg, true));
-        scrollToBottom();
+    
+    // Hide all existing chat DOMs
+    Array.from(messagesFeed.children).forEach(child => {
+        child.style.display = "none";
+    });
+
+    let currentChatDOM = document.getElementById(`chat-dom-${chatId}`);
+    
+    if (!currentChatDOM) {
+        currentChatDOM = document.createElement("div");
+        currentChatDOM.id = `chat-dom-${chatId}`;
+        currentChatDOM.className = "chat-dom-container";
+        currentChatDOM.style.display = "block";
+        currentChatDOM.style.height = "auto";
+        currentChatDOM.style.minHeight = "100%";
+        currentChatDOM.style.display = "flex";
+        currentChatDOM.style.flexDirection = "column";
+        messagesFeed.appendChild(currentChatDOM);
+        
+        if (cachedMessagesMap[chatId]) {
+            cachedMessagesMap[chatId].forEach(msg => appendMessage(msg, true, chatId));
+            scrollToBottom();
+        } else {
+            currentChatDOM.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); font-size: 13.5px;" id="loading-msg-${chatId}">
+                    Loading message history...
+                </div>
+            `;
+        }
+        
+        cachedChatDOMs.set(chatId, currentChatDOM);
+        if (cachedChatDOMs.size > 20) {
+            const firstKey = cachedChatDOMs.keys().next().value;
+            const nodeToRemove = cachedChatDOMs.get(firstKey);
+            if (nodeToRemove) nodeToRemove.remove();
+            cachedChatDOMs.delete(firstKey);
+        }
     } else {
-        messagesFeed.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); font-size: 13.5px;">
-                Loading message history...
-            </div>
-        `;
+        currentChatDOM.style.display = "flex";
+        cachedChatDOMs.delete(chatId);
+        cachedChatDOMs.set(chatId, currentChatDOM);
+        scrollToBottom();
     }
 
     // Fetch messages from room (Background sync)
@@ -1097,9 +1162,20 @@ function confirmDelete(deleteType) {
 }
 
 // Append chat messages inside the feed (XSS-safe DOM construction)
-function appendMessage(data, isHistory = false) {
-    const container = document.getElementById("messages");
-    if (!container) return;
+function appendMessage(data, isHistory = false, targetChatId = null) {
+    const cid = targetChatId || data.chatId || activeChatId;
+    let container = document.getElementById(`chat-dom-${cid}`);
+
+    if (!container) {
+        if (cid === activeChatId) {
+            container = document.getElementById("messages"); // Fallback
+        } else {
+            return; // Chat DOM not loaded yet, will build when clicked
+        }
+    }
+
+    const loadingMsg = document.getElementById(`loading-msg-${cid}`);
+    if (loadingMsg) loadingMsg.remove();
 
     // Check if it is a system message
     const isSystem = data.name === "System";
@@ -1117,8 +1193,14 @@ function appendMessage(data, isHistory = false) {
         sysBubble.className = "system-message";
         sysBubble.textContent = data.message;
         wrapper.appendChild(sysBubble);
-        container.appendChild(wrapper);
-        if (!isHistory) scrollToBottom();
+        
+        // Handle prepend if it's history with offset
+        if (isHistory && data.prepend) {
+            container.prepend(wrapper);
+        } else {
+            container.appendChild(wrapper);
+            if (!isHistory && cid === activeChatId) scrollToBottom();
+        }
         return;
     }
 
@@ -1342,9 +1424,11 @@ function appendMessage(data, isHistory = false) {
     }
     bubble.appendChild(reactionsList);
 
-    bubbleContainer.appendChild(bubble);
-
-    // Hover actions bar
+    if (isHistory && data.prepend) {
+        container.prepend(bubbleContainer);
+    } else {
+        container.appendChild(bubbleContainer);
+    }
     if (data.id) {
         const hoverActions = document.createElement("div");
         hoverActions.className = "message-hover-actions";
@@ -1419,33 +1503,42 @@ function appendMessage(data, isHistory = false) {
         forwardBtn.className = "btn-bubble-action";
         forwardBtn.title = "Forward message";
         forwardBtn.innerHTML = `
+        const fwdBtn = document.createElement("button");
+        fwdBtn.type = "button";
+        fwdBtn.className = "btn-bubble-action";
+        fwdBtn.title = "Forward message";
+        fwdBtn.innerHTML = `
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="15 3 21 3 21 9"></polyline>
                 <line x1="10" y1="14" x2="21" y2="3"></line>
             </svg>
         `;
-        forwardBtn.onclick = () => openForwardModal(data);
-        hoverActions.appendChild(forwardBtn);
+        fwdBtn.onclick = (e) => { e.stopPropagation(); openForwardModal(data); };
+        hoverActions.appendChild(fwdBtn);
 
         // 3. Delete Button
-        const deleteBtn = document.createElement("button");
-        deleteBtn.type = "button";
-        deleteBtn.className = "btn-bubble-action";
-        deleteBtn.title = "Delete Message";
-        deleteBtn.innerHTML = `
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "btn-bubble-action btn-bubble-delete";
+        delBtn.title = "Delete message";
+        delBtn.innerHTML = `
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             </svg>
         `;
-        deleteBtn.onclick = () => openDeleteModal(data.id, isMe);
-        hoverActions.appendChild(deleteBtn);
+        delBtn.onclick = (e) => { e.stopPropagation(); openDeleteModal(data.id, isMe); };
+        hoverActions.appendChild(delBtn);
 
         bubbleContainer.appendChild(hoverActions);
     }
 
     wrapper.appendChild(bubbleContainer);
     container.appendChild(wrapper);
+
+    if (!isHistory && cid === activeChatId) {
+        scrollToBottom();
+    }
 
     // Custom Voice Note Player wiring
     if (data.file && data.file.isVoiceNote) {
@@ -1575,6 +1668,17 @@ socket.on("conversations-list", (convos) => {
     cachedConversations = convos;
     renderConversations(convos);
     updatePageTitleBadge();
+
+    // Preload top 10 conversations silently to prevent loading states
+    let preloadCount = 0;
+    for (let i = 0; i < convos.length && preloadCount < 10; i++) {
+        const c = convos[i];
+        if (!preloadedChats.has(c.id) && !cachedMessagesMap[c.id]) {
+            preloadedChats.add(c.id);
+            socket.emit("load-messages", { chatId: c.id, offset: 0, limit: 50 });
+            preloadCount++;
+        }
+    }
 
     // Re-resolve active details if open
     if (activeChatId) {
@@ -1745,25 +1849,48 @@ socket.on("message-history", ({ chatId, messages, offset, limit }) => {
         cachedMessagesMap[chatId] = [...messages, ...cachedMessagesMap[chatId]];
     }
 
-    if (activeChatId !== chatId) return;
-    const container = document.getElementById("messages");
+    let container = document.getElementById(`chat-dom-${chatId}`);
+    if (!container && offset === 0) {
+        // Build container if it was fetched in background
+        const messagesFeed = document.getElementById("messages");
+        container = document.createElement("div");
+        container.id = `chat-dom-${chatId}`;
+        container.className = "chat-dom-container";
+        container.style.display = (activeChatId === chatId) ? "flex" : "none";
+        container.style.height = "auto";
+        container.style.minHeight = "100%";
+        container.style.flexDirection = "column";
+        if (messagesFeed) messagesFeed.appendChild(container);
+        cachedChatDOMs.set(chatId, container);
+    }
+    
     if (!container) return;
-    
+
     // Save scroll state if loading older messages
-    const oldScrollHeight = container.scrollHeight;
-    
-    container.innerHTML = "";
-    let renderedCount = 0;
-    cachedMessagesMap[chatId].forEach(msg => {
-        appendMessage(msg, true);
-        renderedCount++;
-    });
+    const messagesFeed = document.getElementById("messages");
+    const oldScrollHeight = messagesFeed ? messagesFeed.scrollHeight : 0;
     
     if (offset === 0) {
-        scrollToBottom();
+        container.innerHTML = "";
+        messages.forEach(msg => {
+            appendMessage(msg, true, chatId);
+        });
     } else {
+        // Prepending older messages
+        // We iterate in reverse so they stack upwards properly, or we can just prepend. 
+        // Wait, if we prepend one by one, the FIRST one prepended ends up at the bottom of the prepended block.
+        // `messages` is oldest-to-newest for the block. We need to prepend in reverse to maintain order!
+        [...messages].reverse().forEach(msg => {
+            msg.prepend = true;
+            appendMessage(msg, true, chatId);
+        });
+    }
+    
+    if (offset === 0 && activeChatId === chatId) {
+        scrollToBottom();
+    } else if (offset > 0 && activeChatId === chatId && messagesFeed) {
         // Restore scroll position so user doesn't jump to bottom
-        container.scrollTop = container.scrollHeight - oldScrollHeight;
+        messagesFeed.scrollTop = messagesFeed.scrollHeight - oldScrollHeight;
     }
 });
 

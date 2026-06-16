@@ -2520,3 +2520,21 @@ body, input, button, select, textarea {
     transform: scale(0.98);
     transition: all 0.2s;
 }
+
+/* --- WHATSAPP PERFORMANCE MODE ANIMATIONS --- */
+.messages-area {
+    will-change: transform;
+    transform: translateZ(0);
+}
+.chat-dom-container {
+    will-change: transform;
+    transform: translateZ(0);
+}
+.convo-item {
+    will-change: transform;
+    transform: translateZ(0);
+}
+.sidebar-list {
+    will-change: transform;
+    transform: translateZ(0);
+}
