@@ -1498,11 +1498,6 @@ function appendMessage(data, isHistory = false, targetChatId = null) {
         hoverActions.appendChild(reactBtn);
 
         // 2. Forward Button
-        const forwardBtn = document.createElement("button");
-        forwardBtn.type = "button";
-        forwardBtn.className = "btn-bubble-action";
-        forwardBtn.title = "Forward message";
-        forwardBtn.innerHTML = `
         const fwdBtn = document.createElement("button");
         fwdBtn.type = "button";
         fwdBtn.className = "btn-bubble-action";
