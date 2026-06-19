@@ -1003,7 +1003,9 @@ io.on("connection", async (socket) => {
     // Load Chat Message History
     socket.on("load-messages", async ({ chatId }) => {
         try {
+            console.log(`📥 load-messages requested for chatId: ${chatId} by user: ${name}`);
             socket.activeChatId = chatId;
+            socket.join(chatId.toString()); // Defensive room joining
             const chat = await Chat.findOne({ _id: chatId, participants: userId })
                 .populate("participants", "name mobileNumber");
             if (!chat) return;
@@ -1355,6 +1357,61 @@ io.on("connection", async (socket) => {
         }
     });
 });
+
+/* GET /api/messages/:conversationId and /messages/:conversationId REST API Route */
+const fetchMessagesHandler = async (req, res) => {
+    try {
+        console.log(`REST API request to fetch messages for chatId: ${req.params.conversationId}`);
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
+            console.log("REST API: No token provided");
+            return res.status(401).json({ message: "No token provided" });
+        }
+        const token = authHeader.split(" ")[1];
+        
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const userId = decoded.id;
+        const chatId = req.params.conversationId;
+
+        const chat = await Chat.findOne({ _id: chatId, participants: userId });
+        if (!chat) {
+            console.log(`REST API: Access denied or chat not found for chatId: ${chatId}, userId: ${userId}`);
+            return res.status(403).json({ message: "Access denied or chat not found" });
+        }
+
+        const messages = await Message.find({
+            chat: chatId,
+            deletedFor: { $ne: userId }
+        })
+        .populate("sender", "name mobileNumber")
+        .sort({ createdAt: 1 }); // Sorted by createdAt ascending
+
+        const list = messages.map(msg => {
+            const senderId = msg.sender ? msg.sender._id : null;
+            const status = senderId ? getMessageStatus(msg, chat, senderId) : "read";
+            return {
+                id: msg._id,
+                name: msg.sender ? msg.sender.name : "System",
+                mobileNumber: msg.sender ? msg.sender.mobileNumber : "",
+                message: msg.message,
+                createdAt: msg.createdAt,
+                status,
+                file: msg.file,
+                reactions: msg.reactions || [],
+                replyTo: msg.replyTo
+            };
+        });
+
+        console.log(`REST API: Successfully returned ${list.length} messages for chatId: ${chatId}`);
+        res.json(list);
+    } catch (err) {
+        console.error("REST API: Error fetching messages:", err);
+        res.status(500).json({ message: "Server error: " + err.message });
+    }
+};
+
+app.get("/api/messages/:conversationId", fetchMessagesHandler);
+app.get("/messages/:conversationId", fetchMessagesHandler);
 
 /* Home Route */
 app.get("/", (req, res) => {

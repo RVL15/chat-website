@@ -36,6 +36,7 @@ let preloadedChats = new Set(); // track which chats have been preloaded in back
 let typingUsers = new Set();
 let typingTimeout = null;
 let currentUserId = null;
+let loadMessagesTimeout = null;
 
 // Modal states
 let activeDeleteMessageId = null;
@@ -726,9 +727,13 @@ function renderSearchResults(results) {
 
 // Handle Chat Select room
 function selectChat(chatId, convoDetails = null) {
-    console.log("CHAT SELECTED", chatId);
+    console.log("Selected conversation:", convoDetails);
+    console.log("Conversation ID:", chatId);
     activeChatId = chatId;
     activeChatDetails = convoDetails;
+
+    // Persist active chat selection
+    localStorage.setItem("activeChatId", chatId);
 
     // Clear previews and emoji picker
     removeSelectedFile();
@@ -755,6 +760,12 @@ function selectChat(chatId, convoDetails = null) {
 
     let currentChatDOM = document.getElementById(`chat-dom-${chatId}`);
     
+    // Clear any previous loading timeout
+    if (loadMessagesTimeout) {
+        clearTimeout(loadMessagesTimeout);
+        loadMessagesTimeout = null;
+    }
+
     if (!currentChatDOM) {
         currentChatDOM = document.createElement("div");
         currentChatDOM.id = `chat-dom-${chatId}`;
@@ -771,10 +782,32 @@ function selectChat(chatId, convoDetails = null) {
             scrollToBottom();
         } else {
             currentChatDOM.innerHTML = `
-                <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); font-size: 13.5px;" id="loading-msg-${chatId}">
-                    Loading message history...
+                <div class="chat-skeleton-loader" id="loading-msg-${chatId}" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; width: 100%;">
+                    <div class="skeleton-bubble received" style="align-self: flex-start; width: 60%; height: 40px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; animation: skeleton-pulse 1.5s infinite ease-in-out;"></div>
+                    <div class="skeleton-bubble sent" style="align-self: flex-end; width: 45%; height: 50px; background: rgba(255, 255, 255, 0.08); border-radius: 12px; animation: skeleton-pulse 1.5s infinite ease-in-out;"></div>
+                    <div class="skeleton-bubble received" style="align-self: flex-start; width: 50%; height: 35px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; animation: skeleton-pulse 1.5s infinite ease-in-out;"></div>
+                    <div class="skeleton-bubble sent" style="align-self: flex-end; width: 70%; height: 45px; background: rgba(255, 255, 255, 0.08); border-radius: 12px; animation: skeleton-pulse 1.5s infinite ease-in-out;"></div>
                 </div>
             `;
+            
+            // Set loading failure timeout
+            loadMessagesTimeout = setTimeout(() => {
+                const loadingMsg = document.getElementById(`loading-msg-${chatId}`);
+                if (loadingMsg) {
+                    loadingMsg.innerHTML = `
+                        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center; height: 100%; min-height: 200px;">
+                            <span style="color: #ef4444; font-size: 13.5px; font-weight: 500;">Failed to load message history.</span>
+                            <button type="button" class="btn-secondary-sm" onclick="retryLoadMessages('${chatId}')" style="height: 32px; padding: 0 16px; border-radius: 8px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; background: var(--border-color); border: 1px solid var(--border-color); color: var(--text-primary);">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                                </svg>
+                                Retry
+                            </button>
+                        </div>
+                    `;
+                }
+            }, 6000);
         }
         
         cachedChatDOMs.set(chatId, currentChatDOM);
@@ -884,6 +917,7 @@ function openChat(chatId) {
 function backToChatList() {
     activeChatId = null;
     activeChatDetails = null;
+    localStorage.removeItem("activeChatId");
     
     // Remove active markers in list
     const items = document.querySelectorAll(".convo-item");
@@ -906,7 +940,47 @@ function backToChatList() {
     }
 }
 
+function retryLoadMessages(chatId) {
+    console.log("RETRYING MESSAGE LOAD FOR ROOM", chatId);
+    const container = document.getElementById(`chat-dom-${chatId}`);
+    if (container) {
+        container.innerHTML = `
+            <div class="chat-skeleton-loader" id="loading-msg-${chatId}" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; width: 100%;">
+                <div class="skeleton-bubble received" style="align-self: flex-start; width: 60%; height: 40px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; animation: skeleton-pulse 1.5s infinite ease-in-out;"></div>
+                <div class="skeleton-bubble sent" style="align-self: flex-end; width: 45%; height: 50px; background: rgba(255, 255, 255, 0.08); border-radius: 12px; animation: skeleton-pulse 1.5s infinite ease-in-out;"></div>
+                <div class="skeleton-bubble received" style="align-self: flex-start; width: 50%; height: 35px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; animation: skeleton-pulse 1.5s infinite ease-in-out;"></div>
+                <div class="skeleton-bubble sent" style="align-self: flex-end; width: 70%; height: 45px; background: rgba(255, 255, 255, 0.08); border-radius: 12px; animation: skeleton-pulse 1.5s infinite ease-in-out;"></div>
+            </div>
+        `;
+    }
+    
+    if (loadMessagesTimeout) {
+        clearTimeout(loadMessagesTimeout);
+    }
+    
+    loadMessagesTimeout = setTimeout(() => {
+        const loadingMsg = document.getElementById(`loading-msg-${chatId}`);
+        if (loadingMsg) {
+            loadingMsg.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center; height: 100%; min-height: 200px;">
+                    <span style="color: #ef4444; font-size: 13.5px; font-weight: 500;">Failed to load message history.</span>
+                    <button type="button" class="btn-secondary-sm" onclick="retryLoadMessages('${chatId}')" style="height: 32px; padding: 0 16px; border-radius: 8px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; background: var(--border-color); border: 1px solid var(--border-color); color: var(--text-primary);">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                        </svg>
+                        Retry
+                    </button>
+                </div>
+            `;
+        }
+    }, 6000);
+
+    socket.emit("load-messages", { chatId, offset: 0, limit: 50 });
+}
+
 window.backToChatList = backToChatList;
+window.retryLoadMessages = retryLoadMessages;
 
 // Leave group chat
 function leaveActiveGroup() {
@@ -1174,8 +1248,14 @@ function appendMessage(data, isHistory = false, targetChatId = null) {
         }
     }
 
+    // Clear loading messages or placeholders
     const loadingMsg = document.getElementById(`loading-msg-${cid}`);
     if (loadingMsg) loadingMsg.remove();
+
+    const noMsgPlaceholder = container.querySelector(".no-messages-placeholder");
+    if (noMsgPlaceholder) noMsgPlaceholder.remove();
+
+    console.log(`[RENDER CYCLE] Appending message ID: ${data.id || "optimistic"}, isHistory: ${isHistory}, targetChatId: ${cid}`);
 
     // Check if it is a system message
     const isSystem = data.name === "System";
@@ -1423,12 +1503,7 @@ function appendMessage(data, isHistory = false, targetChatId = null) {
         });
     }
     bubble.appendChild(reactionsList);
-
-    if (isHistory && data.prepend) {
-        container.prepend(bubbleContainer);
-    } else {
-        container.appendChild(bubbleContainer);
-    }
+    bubbleContainer.appendChild(bubble); // Crucial fix: append the message bubble contents to its container!
     if (data.id) {
         const hoverActions = document.createElement("div");
         hoverActions.className = "message-hover-actions";
@@ -1529,7 +1604,11 @@ function appendMessage(data, isHistory = false, targetChatId = null) {
     }
 
     wrapper.appendChild(bubbleContainer);
-    container.appendChild(wrapper);
+    if (isHistory && data.prepend) {
+        container.prepend(wrapper);
+    } else {
+        container.appendChild(wrapper);
+    }
 
     if (!isHistory && cid === activeChatId) {
         scrollToBottom();
@@ -1660,9 +1739,22 @@ function updatePageTitleBadge() {
 
 // Socket Response Events List
 socket.on("conversations-list", (convos) => {
+    console.log("Conversations list received:", convos);
     cachedConversations = convos;
     renderConversations(convos);
     updatePageTitleBadge();
+
+    // Restoring active chat from localStorage on page refresh
+    if (!activeChatId) {
+        const savedChatId = localStorage.getItem("activeChatId");
+        if (savedChatId) {
+            const savedConvo = convos.find(c => c.id === savedChatId);
+            if (savedConvo) {
+                console.log("Restoring active chat from localStorage:", savedChatId);
+                selectChat(savedChatId, savedConvo);
+            }
+        }
+    }
 
     // Preload top 10 conversations silently to prevent loading states
     let preloadCount = 0;
@@ -1836,6 +1928,14 @@ socket.on("left-chat", ({ chatId }) => {
 });
 
 socket.on("message-history", ({ chatId, messages, offset, limit }) => {
+    console.log(`[SOCKET EVENT] message-history received for room: ${chatId}, offset: ${offset}, count: ${messages ? messages.length : 0}`);
+
+    // Clear timeout on successful load
+    if (activeChatId === chatId && loadMessagesTimeout) {
+        clearTimeout(loadMessagesTimeout);
+        loadMessagesTimeout = null;
+    }
+
     // Update local cache
     if (!cachedMessagesMap[chatId] || offset === 0) {
         cachedMessagesMap[chatId] = messages;
@@ -1867,9 +1967,23 @@ socket.on("message-history", ({ chatId, messages, offset, limit }) => {
     
     if (offset === 0) {
         container.innerHTML = "";
-        messages.forEach(msg => {
-            appendMessage(msg, true, chatId);
-        });
+        if (!messages || messages.length === 0) {
+            container.innerHTML = `
+                <div class="no-messages-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 200px; color: var(--text-secondary); text-align: center; padding: 40px; gap: 12px;">
+                    <div style="background: rgba(255, 255, 255, 0.03); padding: 16px; border-radius: 50%; border: 1px solid var(--border-color);">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--wa-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <div style="font-size: 15px; font-weight: 600; color: var(--text-primary);">No messages yet</div>
+                    <div style="font-size: 12.5px; max-width: 280px; line-height: 1.4;">Start the conversation by typing a message below. Your messages are encrypted and secure.</div>
+                </div>
+            `;
+        } else {
+            messages.forEach(msg => {
+                appendMessage(msg, true, chatId);
+            });
+        }
     } else {
         // Prepending older messages
         // We iterate in reverse so they stack upwards properly, or we can just prepend. 
@@ -1890,6 +2004,7 @@ socket.on("message-history", ({ chatId, messages, offset, limit }) => {
 });
 
 socket.on("chat-message", (data) => {
+    console.log("[SOCKET EVENT] chat-message received:", data);
     const isTargetingActiveChat = activeChatId === data.chatId;
 
     if (!cachedMessagesMap[data.chatId]) {
