@@ -2552,3 +2552,89 @@ body, input, button, select, textarea {
     }
 }
 
+/* Pinned Message Banner Styles */
+.pinned-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 13px;
+    z-index: 5;
+    animation: slideDown 0.2s ease-out;
+}
+
+.pinned-banner-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    flex: 1;
+    overflow: hidden;
+}
+
+#pinnedBannerText {
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+/* Highlight Pulse Animation for scrolled-to messages */
+@keyframes highlightPulse {
+    0% { background-color: rgba(0, 168, 132, 0.4); }
+    50% { background-color: rgba(0, 168, 132, 0.1); }
+    100% { background-color: transparent; }
+}
+
+.highlight-pulse {
+    animation: highlightPulse 2s ease-out;
+    border-radius: 8px;
+}
+
+/* Message Search bar styles */
+.message-search-bar {
+    z-index: 6;
+    animation: slideDown 0.2s ease-out;
+}
+
+.search-result-item:hover {
+    background: var(--border-color) !important;
+}
+
+/* Call Log Card styles */
+.call-log-card {
+    transition: background 0.2s;
+}
+
+.call-log-card:hover {
+    background: var(--border-color) !important;
+}
+
+/* Edited and Forwarded labels */
+.message-edited-indicator {
+    font-style: italic;
+    opacity: 0.7;
+    margin-right: 4px;
+}
+
+.message-forwarded-tag {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+/* Archived row styles */
+.archived-chats-folder:hover,
+.archived-chats-header:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+@keyframes slideDown {
+    from { transform: translateY(-10px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+

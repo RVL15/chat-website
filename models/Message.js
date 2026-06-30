@@ -37,6 +37,23 @@ const MessageSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "User"
     }],
+    isEdited: {
+        type: Boolean,
+        default: false
+    },
+    isForwarded: {
+        type: Boolean,
+        default: false
+    },
+    isDeletedEveryone: {
+        type: Boolean,
+        default: false
+    },
+    callInfo: {
+        callType: { type: String }, // "audio" or "video"
+        duration: { type: Number }, // in seconds
+        status: { type: String }    // "missed", "completed", "declined"
+    },
     createdAt: {
         type: Date,
         default: Date.now

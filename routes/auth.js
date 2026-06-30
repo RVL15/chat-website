@@ -21,6 +21,21 @@ router.post("/register", async (req, res) => {
             });
         }
 
+        // Input Sanitization and Validation
+        if (name.length < 2 || name.length > 50) {
+            return res.status(400).json({ message: "Name must be between 2 and 50 characters" });
+        }
+
+        // Validate mobile number: support optional +, followed by 7-15 digits
+        const mobileRegex = /^\+?[1-9]\d{6,14}$/;
+        if (!mobileRegex.test(mobileNumber) && mobileNumber !== "0000000000") {
+            return res.status(400).json({ message: "Invalid mobile number format (use international format, e.g., +1234567890)" });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ message: "Password must be at least 6 characters long" });
+        }
+
         const existingMobile = await User.findOne({ mobileNumber });
         if (existingMobile) {
             return res.status(400).json({
@@ -34,7 +49,8 @@ router.post("/register", async (req, res) => {
             password: hashedPassword,
             name,
             mobileNumber,
-            profilePicture
+            profilePicture,
+            tokenVersion: 0
         });
 
         await user.save();
@@ -95,7 +111,8 @@ router.post("/login", async (req, res) => {
                 id: user._id,
                 mobileNumber: user.mobileNumber,
                 name: user.name,
-                isAdmin: isAdmin
+                isAdmin: isAdmin,
+                tokenVersion: user.tokenVersion || 0
             },
             process.env.JWT_SECRET,
             {
@@ -127,6 +144,10 @@ router.post("/reset-password", async (req, res) => {
             return res.status(400).json({ message: "Mobile number and new password required" });
         }
 
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: "New password must be at least 6 characters long" });
+        }
+
         const user = await User.findOne({ mobileNumber });
         if (!user) {
             return res.status(404).json({ message: "No account found with this mobile number" });
@@ -136,11 +157,37 @@ router.post("/reset-password", async (req, res) => {
         const hashedPassword = await bcrypt.hash(newPassword, salt);
         
         user.password = hashedPassword;
+        user.tokenVersion = (user.tokenVersion || 0) + 1; // Force logout everywhere when password reset!
         await user.save();
 
         res.json({ message: "Password updated successfully" });
     } catch (err) {
         console.error("Reset Password Error:", err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+/* LOGOUT EVERYWHERE */
+router.post("/logout-everywhere", async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
+            return res.status(401).json({ message: "No token provided" });
+        }
+        const token = authHeader.split(" ")[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        const user = await User.findById(decoded.id);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+        
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
+        await user.save();
+        
+        res.json({ message: "Logged out from all sessions" });
+    } catch (err) {
+        console.error("Logout everywhere error:", err);
         res.status(500).json({ message: "Server error" });
     }
 });

@@ -31,7 +31,29 @@ const UserSchema = new mongoose.Schema({
     lastLogin: {
         type: Date,
         default: null
-    }
+    },
+    tokenVersion: {
+        type: Number,
+        default: 0
+    },
+    blockedUsers: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+    }],
+    archivedChats: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Chat"
+    }],
+    mutedChats: [{
+        chatId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Chat"
+        },
+        mutedUntil: {
+            type: Date,
+            required: true
+        }
+    }]
 });
 
 module.exports = mongoose.model("User", UserSchema);

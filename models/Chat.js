@@ -36,6 +36,14 @@ const ChatSchema = new mongoose.Schema({
     onlyAdminsCanMessage: {
         type: Boolean,
         default: false
+    },
+    pinnedMessages: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Message"
+    }],
+    groupIcon: {
+        type: String,
+        default: ""
     }
 });
 

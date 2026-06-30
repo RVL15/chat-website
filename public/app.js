@@ -38,6 +38,13 @@ let typingTimeout = null;
 let currentUserId = null;
 let loadMessagesTimeout = null;
 
+// Pinned messages, Archived folder & Calling states
+let showingArchivedOnly = false;
+let activeChatPins = [];
+let activePinnedMessageIndex = 0;
+let activeCallStartTime = null;
+let activeCallTimer = null;
+
 // Modal states
 let activeDeleteMessageId = null;
 let activeDeleteIsMe = false;
@@ -287,22 +294,80 @@ function renderConversations(convos) {
     const container = document.getElementById("conversationsList");
     if (!container) return;
 
-    if (convos.length === 0) {
-        container.innerHTML = `
-            <div style="padding: 20px; text-align: center; color: var(--text-secondary); font-size: 13px;" id="no-chats-msg">
-                No chats found
+    // Remove any existing archived row
+    const oldRow = document.getElementById("archived-folder-row");
+    if (oldRow) oldRow.remove();
+
+    const archivedConvos = convos.filter(c => c.isArchived);
+    const displayConvos = showingArchivedOnly ? archivedConvos : convos.filter(c => !c.isArchived);
+
+    // Prepend the Archived folder row if applicable
+    if (showingArchivedOnly) {
+        const headerRow = document.createElement("div");
+        headerRow.id = "archived-folder-row";
+        headerRow.className = "archived-chats-header";
+        headerRow.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border-color); color: var(--wa-green); cursor: pointer; font-weight: 600; font-size: 14px;" onclick="toggleArchivedView(false)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                Archived Chats
             </div>
         `;
+        container.prepend(headerRow);
+    } else if (archivedConvos.length > 0) {
+        const folderRow = document.createElement("div");
+        folderRow.id = "archived-folder-row";
+        folderRow.className = "archived-chats-folder";
+        folderRow.style.cursor = "pointer";
+        folderRow.onclick = () => toggleArchivedView(true);
+        folderRow.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border-color); color: var(--text-primary);">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--wa-green);">
+                        <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                        <rect x="1" y="3" width="22" height="5"></rect>
+                        <line x1="10" y1="12" x2="14" y2="12"></line>
+                    </svg>
+                    <span style="font-weight: 600; font-size: 14px;">Archived</span>
+                </div>
+                <span style="background: var(--wa-green); color: white; font-size: 11px; padding: 2px 6px; border-radius: 10px; font-weight: 700;">${archivedConvos.length}</span>
+            </div>
+        `;
+        container.prepend(folderRow);
+    }
+
+    if (displayConvos.length === 0) {
+        Array.from(container.children).forEach(child => {
+            if (child.id && child.id.startsWith("convo-node-")) {
+                child.remove();
+            }
+        });
+
+        let emptyMsg = document.getElementById("no-chats-msg");
+        if (!emptyMsg) {
+            emptyMsg = document.createElement("div");
+            emptyMsg.id = "no-chats-msg";
+            emptyMsg.style.padding = "20px";
+            emptyMsg.style.textAlign = "center";
+            emptyMsg.style.color = "var(--text-secondary)";
+            emptyMsg.style.fontSize = "13px";
+            emptyMsg.textContent = "No chats found";
+            container.appendChild(emptyMsg);
+        }
         return;
     }
 
+    const emptyMsg = document.getElementById("no-chats-msg");
+    if (emptyMsg) emptyMsg.remove();
+
     const activeIds = new Set();
 
-    // Enable CSS flexbox reordering on container
     container.style.display = "flex";
     container.style.flexDirection = "column";
 
-    convos.forEach((convo, index) => {
+    displayConvos.forEach((convo, index) => {
         const isSelected = activeChatId === convo.id;
         const name = getConversationName(convo);
         const hasUnread = convo.unreadCount > 0;
@@ -313,13 +378,12 @@ function renderConversations(convos) {
         if (!item) {
             item = document.createElement("div");
             item.id = `convo-node-${convo.id}`;
-            // Use pointer events for faster click detection
             item.onpointerdown = () => selectChat(convo.id, convo);
             
             // Avatar
             let avatarHTML = "";
             if (convo.isGroup) {
-                avatarHTML = `<div class="convo-avatar preset-teal">${name.substring(0, 2).toUpperCase()}</div>`;
+                avatarHTML = renderAvatar(convo.groupIcon || "", name, "convo-avatar");
             } else {
                 const other = convo.participants.find(p => p && p.mobileNumber && currentMobileNumber && p.mobileNumber !== currentMobileNumber);
                 avatarHTML = renderAvatar(other ? other.profilePicture : "", name, "convo-avatar");
@@ -735,14 +799,24 @@ function selectChat(chatId, convoDetails = null) {
     // Persist active chat selection
     localStorage.setItem("activeChatId", chatId);
 
-    // Clear previews and emoji picker
+    // Clear previews, emoji picker, and search overlays
     removeSelectedFile();
     const emojiPicker = document.getElementById("emojiPicker");
     if (emojiPicker) emojiPicker.style.display = "none";
 
+    const pinsBanner = document.getElementById("pinnedMessagesBanner");
+    if (pinsBanner) pinsBanner.style.display = "none";
+    activeChatPins = [];
+    activePinnedMessageIndex = 0;
+
+    const searchBar = document.getElementById("messageSearchBar");
+    if (searchBar) searchBar.style.display = "none";
+
     // Remove active markers in list and highlight selected convo
     const items = document.querySelectorAll(".convo-item");
     items.forEach(el => el.classList.remove("active"));
+    const selectedItem = document.getElementById(`convo-node-${chatId}`);
+    if (selectedItem) selectedItem.classList.add("active");
     
     // Clear page title unread counts badge
     updatePageTitleBadge();
@@ -870,6 +944,8 @@ function selectChat(chatId, convoDetails = null) {
             if (groupInfoBtn) groupInfoBtn.style.display = "block";
             if (document.getElementById("videoCallBtn")) document.getElementById("videoCallBtn").style.display = "none";
             if (document.getElementById("audioCallBtn")) document.getElementById("audioCallBtn").style.display = "none";
+            if (document.getElementById("blockUserBtn")) document.getElementById("blockUserBtn").style.display = "none";
+
             const memberNames = convoDetails.participants
                 .filter(p => p && p.mobileNumber)
                 .map(p => p.mobileNumber === currentMobileNumber ? "You" : p.name)
@@ -883,12 +959,43 @@ function selectChat(chatId, convoDetails = null) {
             if (groupInfoBtn) groupInfoBtn.style.display = "none";
             if (document.getElementById("videoCallBtn")) document.getElementById("videoCallBtn").style.display = "block";
             if (document.getElementById("audioCallBtn")) document.getElementById("audioCallBtn").style.display = "block";
+
             const other = convoDetails.participants.find(p => p && p.mobileNumber && currentMobileNumber && p.mobileNumber !== currentMobileNumber);
+
+            if (document.getElementById("blockUserBtn")) {
+                const blockBtn = document.getElementById("blockUserBtn");
+                blockBtn.style.display = "block";
+                const isBlocked = other && other.isBlockedByMe;
+                blockBtn.title = isBlocked ? "Unblock User" : "Block User";
+                blockBtn.innerHTML = isBlocked 
+                    ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="var(--wa-green)" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>`
+                    : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>`;
+            }
+
             if (other) {
                 statusEl.textContent = other.isOnline ? "online" : `last seen ${formatLastSeen(other.lastSeen)}`;
             } else {
                 statusEl.textContent = "online";
             }
+        }
+
+        // Search, Mute, and Archive button updates
+        if (document.getElementById("msgSearchBtn")) document.getElementById("msgSearchBtn").style.display = "block";
+        if (document.getElementById("muteChatBtn")) {
+            const muteBtn = document.getElementById("muteChatBtn");
+            muteBtn.style.display = "block";
+            muteBtn.title = convoDetails.isMuted ? "Unmute Chat" : "Mute Chat";
+            muteBtn.innerHTML = convoDetails.isMuted
+                ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="var(--wa-green)" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></svg>`
+                : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></svg>`;
+        }
+        if (document.getElementById("archiveChatBtn")) {
+            const archiveBtn = document.getElementById("archiveChatBtn");
+            archiveBtn.style.display = "block";
+            archiveBtn.title = convoDetails.isArchived ? "Unarchive Chat" : "Archive Chat";
+            archiveBtn.innerHTML = convoDetails.isArchived
+                ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="var(--wa-green)" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>`
+                : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>`;
         }
     }
 
@@ -1135,6 +1242,15 @@ function sendMessage() {
         renderConversations(cachedConversations);
     }
 
+    if (editingMessageId) {
+        socket.emit("edit-message", {
+            messageId: editingMessageId,
+            newText: messageText
+        });
+        clearEdit();
+        return;
+    }
+
     socket.emit("chat-message", {
         chatId: activeChatId,
         message: messageText,
@@ -1235,6 +1351,55 @@ function confirmDelete(deleteType) {
     closeDeleteModal();
 }
 
+let editingMessageId = null;
+
+function initEdit(messageId, text) {
+    clearReply();
+    editingMessageId = messageId;
+    const editContainer = document.getElementById("editPreviewContainer");
+    const editText = document.getElementById("editPreviewText");
+    const input = document.getElementById("message");
+    
+    if (editContainer && editText && input) {
+        editText.textContent = text;
+        editContainer.style.display = "flex";
+        input.value = text;
+        input.focus();
+        
+        const sendBtn = document.querySelector("#chatForm .btn-send");
+        if (sendBtn) {
+            sendBtn.innerHTML = `
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+            `;
+            sendBtn.title = "Confirm Edit";
+        }
+    }
+}
+
+function clearEdit() {
+    editingMessageId = null;
+    const editContainer = document.getElementById("editPreviewContainer");
+    const input = document.getElementById("message");
+    
+    if (editContainer) editContainer.style.display = "none";
+    if (input) {
+        input.value = "";
+    }
+    
+    const sendBtn = document.querySelector("#chatForm .btn-send");
+    if (sendBtn) {
+        sendBtn.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+        `;
+        sendBtn.title = "Send Message";
+    }
+}
+
 // Append chat messages inside the feed (XSS-safe DOM construction)
 function appendMessage(data, isHistory = false, targetChatId = null) {
     const cid = targetChatId || data.chatId || activeChatId;
@@ -1317,113 +1482,190 @@ function appendMessage(data, isHistory = false, targetChatId = null) {
         bubble.appendChild(nameLabel);
     }
 
-    // Render Quoted Reply if present
-    if (data.replyTo && data.replyTo.text) {
-        const replyBlock = document.createElement("div");
-        replyBlock.className = "message-quoted-reply";
-        replyBlock.innerHTML = `
-            <div class="quoted-sender">${data.replyTo.senderName || "Unknown"}</div>
-            <div class="quoted-text">${data.replyTo.text}</div>
-        `;
-        bubble.appendChild(replyBlock);
-    }
-
-    // Media file rendering block
-    if (data.file && data.file.data) {
-        const mime = data.file.mimeType || "";
-        const mediaContainer = document.createElement("div");
-        mediaContainer.className = "message-media-container";
-
-        if (data.file.isVoiceNote) {
-            // Voice Note custom player
-            const playIconSVG = `
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                </svg>
-            `;
-            const pauseIconSVG = `
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                    <rect x="6" y="4" width="4" height="16"></rect>
-                    <rect x="14" y="4" width="4" height="16"></rect>
-                </svg>
-            `;
-
-            bubble.className += " voice-note";
-            const vnDiv = document.createElement("div");
-            vnDiv.className = "voice-note-bubble";
-            
-            // Build waves HTML
-            let waveBarsHTML = "";
-            for (let i = 0; i < 15; i++) {
-                const heightPct = 30 + Math.floor(Math.random() * 70); // simulated random wave height
-                waveBarsHTML += `<div class="vn-wave-bar" style="height: ${heightPct}%;"></div>`;
-            }
-
-            vnDiv.innerHTML = `
-                <button type="button" class="btn-play-pause">${playIconSVG}</button>
-                <div class="vn-waveform">${waveBarsHTML}</div>
-                <span class="vn-time">0:00</span>
-                <audio src="${data.file.data}" style="display: none;"></audio>
-            `;
-            bubble.appendChild(vnDiv);
-        } else if (mime.startsWith("image/")) {
-            const img = document.createElement("img");
-            img.className = "message-media-image";
-            img.src = data.file.data;
-            img.alt = data.file.name || "Image";
-            img.onclick = (e) => openLightbox(e.target.src);
-            mediaContainer.appendChild(img);
-            bubble.appendChild(mediaContainer);
-        } else if (mime.startsWith("video/")) {
-            const video = document.createElement("video");
-            video.className = "message-media-video";
-            video.src = data.file.data;
-            video.controls = true;
-            mediaContainer.appendChild(video);
-            bubble.appendChild(mediaContainer);
-        } else if (mime.startsWith("audio/")) {
-            const audio = document.createElement("audio");
-            audio.className = "message-media-audio";
-            audio.src = data.file.data;
-            audio.controls = true;
-            mediaContainer.appendChild(audio);
-            bubble.appendChild(mediaContainer);
-        } else {
-            // General Document download card
-            const docLink = document.createElement("a");
-            docLink.className = "message-media-doc";
-            docLink.href = data.file.data;
-            docLink.download = data.file.name || "file";
-            
-            const sizeFormatted = data.file.size ? formatBytes(data.file.size) : "Unknown size";
-            docLink.innerHTML = `
-                <div class="doc-icon-wrapper">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                        <line x1="16" y1="13" x2="8" y2="13"></line>
-                        <line x1="16" y1="17" x2="8" y2="17"></line>
-                        <polyline points="10 9 9 9 8 9"></polyline>
-                    </svg>
-                </div>
-                <div class="doc-meta">
-                    <div class="doc-name">${data.file.name || "Attachment"}</div>
-                    <div class="doc-size">${sizeFormatted}</div>
-                </div>
-            `;
-            bubble.appendChild(docLink);
-        }
-    }
-
-    if (data.message) {
+    if (data.isDeletedEveryone) {
+        bubble.classList.add("deleted-everyone");
         const textNode = document.createElement("span");
         textNode.className = "message-text";
-        textNode.textContent = data.message;
+        textNode.style.fontStyle = "italic";
+        textNode.style.color = "var(--text-secondary)";
+        textNode.textContent = "🚫 This message was deleted";
         bubble.appendChild(textNode);
-    }
+    } else if (data.callInfo) {
+        const callCard = document.createElement("div");
+        callCard.className = "call-log-card";
+        
+        const isVideo = data.callInfo.type === "video";
+        const isMissed = data.callInfo.status === "missed";
+        
+        let durationText = "";
+        if (data.callInfo.duration) {
+            const mins = Math.floor(data.callInfo.duration / 60);
+            const secs = data.callInfo.duration % 60;
+            durationText = mins > 0 ? ` (${mins}m ${secs}s)` : ` (${secs}s)`;
+        }
+        
+        let statusText = "";
+        let strokeColor = "var(--text-secondary)";
+        if (data.callInfo.status === "missed") {
+            statusText = isMe ? "No Answer" : "Missed Call";
+            strokeColor = "#ef4444";
+        } else if (data.callInfo.status === "completed") {
+            statusText = `Completed${durationText}`;
+            strokeColor = "var(--wa-green)";
+        } else {
+            statusText = data.callInfo.status;
+        }
 
+        callCard.innerHTML = `
+            <div class="call-log-icon" style="background: rgba(255, 255, 255, 0.05); padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: ${strokeColor};">
+                ${isVideo 
+                    ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>`
+                    : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>`
+                }
+            </div>
+            <div class="call-log-details" style="display: flex; flex-direction: column; gap: 2px;">
+                <span class="call-log-title" style="font-weight: 600; font-size: 13.5px; color: var(--text-primary);">${isVideo ? "Video Call" : "Voice Call"}</span>
+                <span class="call-log-status" style="font-size: 11.5px; color: ${strokeColor}; font-weight: 500;">${statusText}</span>
+            </div>
+        `;
+        callCard.style.display = "flex";
+        callCard.style.alignItems = "center";
+        callCard.style.gap = "12px";
+        callCard.style.padding = "10px 14px";
+        callCard.style.borderRadius = "12px";
+        callCard.style.background = "var(--bg-secondary)";
+        callCard.style.border = "1px solid var(--border-color)";
+        callCard.style.width = "fit-content";
+        callCard.style.margin = "8px 0";
+        bubble.appendChild(callCard);
+    } else {
+        if (data.isForwarded) {
+            const fwdLabel = document.createElement("div");
+            fwdLabel.className = "message-forwarded-tag";
+            fwdLabel.innerHTML = `
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2.5" style="display: inline-block; vertical-align: middle; margin-right: 4px; opacity: 0.7;">
+                    <polyline points="15 3 21 3 21 9"></polyline>
+                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                </svg>
+                <span style="font-size: 11px; font-style: italic; color: var(--text-secondary); vertical-align: middle; opacity: 0.7;">Forwarded</span>
+            `;
+            fwdLabel.style.marginBottom = "4px";
+            bubble.appendChild(fwdLabel);
+        }
+
+        if (data.replyTo && data.replyTo.text) {
+            const replyBlock = document.createElement("div");
+            replyBlock.className = "message-quoted-reply";
+            replyBlock.innerHTML = `
+                <div class="quoted-sender">${data.replyTo.senderName || "Unknown"}</div>
+                <div class="quoted-text">${data.replyTo.text}</div>
+            `;
+            bubble.appendChild(replyBlock);
+        }
+
+        if (data.file && data.file.data) {
+            const mime = data.file.mimeType || "";
+            const mediaContainer = document.createElement("div");
+            mediaContainer.className = "message-media-container";
+
+            if (data.file.isVoiceNote) {
+                const playIconSVG = `
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                `;
+                const pauseIconSVG = `
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                        <rect x="6" y="4" width="4" height="16"></rect>
+                        <rect x="14" y="4" width="4" height="16"></rect>
+                    </svg>
+                `;
+
+                bubble.className += " voice-note";
+                const vnDiv = document.createElement("div");
+                vnDiv.className = "voice-note-bubble";
+                
+                let waveBarsHTML = "";
+                for (let i = 0; i < 15; i++) {
+                    const heightPct = 30 + Math.floor(Math.random() * 70);
+                    waveBarsHTML += `<div class="vn-wave-bar" style="height: ${heightPct}%;"></div>`;
+                }
+
+                vnDiv.innerHTML = `
+                    <button type="button" class="btn-play-pause">${playIconSVG}</button>
+                    <div class="vn-waveform">${waveBarsHTML}</div>
+                    <span class="vn-time">0:00</span>
+                    <audio src="${data.file.data}" style="display: none;"></audio>
+                `;
+                bubble.appendChild(vnDiv);
+            } else if (mime.startsWith("image/")) {
+                const img = document.createElement("img");
+                img.className = "message-media-image";
+                img.src = data.file.data;
+                img.alt = data.file.name || "Image";
+                img.onclick = (e) => openLightbox(e.target.src);
+                mediaContainer.appendChild(img);
+                bubble.appendChild(mediaContainer);
+            } else if (mime.startsWith("video/")) {
+                const video = document.createElement("video");
+                video.className = "message-media-video";
+                video.src = data.file.data;
+                video.controls = true;
+                mediaContainer.appendChild(video);
+                bubble.appendChild(mediaContainer);
+            } else if (mime.startsWith("audio/")) {
+                const audio = document.createElement("audio");
+                audio.className = "message-media-audio";
+                audio.src = data.file.data;
+                audio.controls = true;
+                mediaContainer.appendChild(audio);
+                bubble.appendChild(mediaContainer);
+            } else {
+                const docLink = document.createElement("a");
+                docLink.className = "message-media-doc";
+                docLink.href = data.file.data;
+                docLink.download = data.file.name || "file";
+                
+                const sizeFormatted = data.file.size ? formatBytes(data.file.size) : "Unknown size";
+                docLink.innerHTML = `
+                    <div class="doc-icon-wrapper">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                    </div>
+                    <div class="doc-meta">
+                        <div class="doc-name">${data.file.name || "Attachment"}</div>
+                        <div class="doc-size">${sizeFormatted}</div>
+                    </div>
+                `;
+                bubble.appendChild(docLink);
+            }
+        }
+
+        if (data.message) {
+            const textNode = document.createElement("span");
+            textNode.className = "message-text";
+            textNode.textContent = data.message;
+            bubble.appendChild(textNode);
+        }
+    }
+    
     const footer = document.createElement("div");
     footer.className = "message-footer";
+
+    if (data.isEdited) {
+        const editedSpan = document.createElement("span");
+        editedSpan.className = "message-edited-indicator";
+        editedSpan.textContent = " (edited) ";
+        editedSpan.style.fontSize = "10px";
+        editedSpan.style.color = "var(--text-secondary)";
+        editedSpan.style.marginRight = "4px";
+        footer.appendChild(editedSpan);
+    }
 
     const timeSpan = document.createElement("span");
     timeSpan.className = "message-time";
@@ -1504,7 +1746,7 @@ function appendMessage(data, isHistory = false, targetChatId = null) {
     }
     bubble.appendChild(reactionsList);
     bubbleContainer.appendChild(bubble); // Crucial fix: append the message bubble contents to its container!
-    if (data.id) {
+    if (data.id && !data.isDeletedEveryone && !data.callInfo) {
         const hoverActions = document.createElement("div");
         hoverActions.className = "message-hover-actions";
 
@@ -1531,7 +1773,7 @@ function appendMessage(data, isHistory = false, targetChatId = null) {
         reactBtn.className = "btn-bubble-action";
         reactBtn.title = "React to message";
         reactBtn.innerHTML = `
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
                 <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
                 <line x1="9" y1="9" x2="9.01" y2="9"></line>
@@ -1586,7 +1828,47 @@ function appendMessage(data, isHistory = false, targetChatId = null) {
         fwdBtn.onclick = (e) => { e.stopPropagation(); openForwardModal(data); };
         hoverActions.appendChild(fwdBtn);
 
-        // 3. Delete Button
+        // 3. Pin Button
+        const isGroupAdmin = activeChatDetails && activeChatDetails.isGroup && activeChatDetails.admin && currentUserId && activeChatDetails.admin.toString() === currentUserId.toString();
+        const canPin = activeChatDetails && (!activeChatDetails.isGroup || isGroupAdmin);
+        if (canPin) {
+            const pinBtn = document.createElement("button");
+            pinBtn.type = "button";
+            pinBtn.className = "btn-bubble-action";
+            pinBtn.title = "Pin message";
+            pinBtn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="17" x2="12" y2="22"></line>
+                    <path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.33-2.92a2 2 0 0 1-.43-1.24V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v5.84a2 2 0 0 1-.43 1.24l-2.33 2.92A2 2 0 0 0 5 15.24z"></path>
+                </svg>
+            `;
+            pinBtn.onclick = (e) => {
+                e.stopPropagation();
+                socket.emit("pin-message", { chatId: activeChatId, messageId: data.id });
+            };
+            hoverActions.appendChild(pinBtn);
+        }
+
+        // 4. Edit Button
+        if (isMe && data.message && !data.file) {
+            const editBtn = document.createElement("button");
+            editBtn.type = "button";
+            editBtn.className = "btn-bubble-action";
+            editBtn.title = "Edit message";
+            editBtn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+            `;
+            editBtn.onclick = (e) => {
+                e.stopPropagation();
+                initEdit(data.id, data.message);
+            };
+            hoverActions.appendChild(editBtn);
+        }
+
+        // 5. Delete Button
         const delBtn = document.createElement("button");
         delBtn.type = "button";
         delBtn.className = "btn-bubble-action btn-bubble-delete";
@@ -1927,8 +2209,14 @@ socket.on("left-chat", ({ chatId }) => {
     socket.emit("get-conversations");
 });
 
-socket.on("message-history", ({ chatId, messages, offset, limit }) => {
+socket.on("message-history", ({ chatId, messages, offset, limit, pinnedMessages }) => {
     console.log(`[SOCKET EVENT] message-history received for room: ${chatId}, offset: ${offset}, count: ${messages ? messages.length : 0}`);
+
+    if (activeChatId === chatId) {
+        activeChatPins = pinnedMessages || [];
+        activePinnedMessageIndex = 0;
+        renderPinnedBanner();
+    }
 
     // Clear timeout on successful load
     if (activeChatId === chatId && loadMessagesTimeout) {
@@ -2075,19 +2363,212 @@ socket.on("chat-message", (data) => {
 });
 
 socket.on("message-deleted", ({ messageId, deleteType }) => {
+    if (activeChatId && cachedMessagesMap[activeChatId]) {
+        const idx = cachedMessagesMap[activeChatId].findIndex(m => m.id === messageId);
+        if (idx !== -1) {
+            if (deleteType === "everyone") {
+                cachedMessagesMap[activeChatId][idx].message = "🚫 This message was deleted";
+                cachedMessagesMap[activeChatId][idx].isDeletedEveryone = true;
+                cachedMessagesMap[activeChatId][idx].file = undefined;
+            } else {
+                cachedMessagesMap[activeChatId].splice(idx, 1);
+            }
+        }
+    }
+
     const msgEl = document.getElementById(`msg-${messageId}`);
     if (msgEl) {
-        msgEl.classList.add("deleting");
-        setTimeout(() => {
-            msgEl.remove();
-        }, 300);
-    }
-    if (deleteType === "everyone") {
-        showToast("Message was deleted for everyone", "info");
-    } else {
-        showToast("Message was deleted for you", "info");
+        if (deleteType === "everyone") {
+            msgEl.classList.add("deleted-everyone");
+            const textNode = msgEl.querySelector(".message-text");
+            if (textNode) {
+                textNode.textContent = "🚫 This message was deleted";
+                textNode.style.fontStyle = "italic";
+                textNode.style.color = "var(--text-secondary)";
+            }
+            const mediaCont = msgEl.querySelector(".message-media-container");
+            if (mediaCont) mediaCont.remove();
+            
+            const docLink = msgEl.querySelector(".message-media-doc");
+            if (docLink) docLink.remove();
+            
+            const voiceNote = msgEl.querySelector(".voice-note-bubble");
+            if (voiceNote) voiceNote.remove();
+
+            const quotedReply = msgEl.querySelector(".message-quoted-reply");
+            if (quotedReply) quotedReply.remove();
+
+            const hoverActions = msgEl.querySelector(".message-hover-actions");
+            if (hoverActions) hoverActions.remove();
+
+            showToast("Message was deleted for everyone", "info");
+        } else {
+            msgEl.classList.add("deleting");
+            setTimeout(() => {
+                msgEl.remove();
+            }, 300);
+            showToast("Message was deleted for you", "info");
+        }
     }
     socket.emit("get-conversations");
+});
+
+socket.on("message-edited", ({ chatId, messageId, message, isEdited }) => {
+    if (cachedMessagesMap[chatId]) {
+        const idx = cachedMessagesMap[chatId].findIndex(m => m.id === messageId);
+        if (idx !== -1) {
+            cachedMessagesMap[chatId][idx].message = message;
+            cachedMessagesMap[chatId][idx].isEdited = isEdited;
+        }
+    }
+
+    if (chatId === activeChatId) {
+        const msgEl = document.getElementById(`msg-${messageId}`);
+        if (msgEl) {
+            const textNode = msgEl.querySelector(".message-text");
+            if (textNode) {
+                textNode.textContent = message;
+            }
+            
+            const footer = msgEl.querySelector(".message-footer");
+            if (footer && !footer.querySelector(".message-edited-indicator")) {
+                const editedSpan = document.createElement("span");
+                editedSpan.className = "message-edited-indicator";
+                editedSpan.textContent = " (edited) ";
+                editedSpan.style.fontSize = "10px";
+                editedSpan.style.color = "var(--text-secondary)";
+                editedSpan.style.marginRight = "4px";
+                footer.insertBefore(editedSpan, footer.firstChild);
+            }
+        }
+    }
+
+    socket.emit("get-conversations");
+});
+
+socket.on("chat-pins-updated", ({ chatId, pinnedMessages, newPin }) => {
+    if (chatId !== activeChatId) return;
+    
+    if (pinnedMessages) {
+        const pinIds = pinnedMessages.map(id => id.toString());
+        if (newPin && !activeChatPins.some(p => p.id === newPin.id)) {
+            activeChatPins.push(newPin);
+        }
+        activeChatPins = activeChatPins.filter(p => pinIds.includes(p.id.toString()));
+    }
+    
+    if (activePinnedMessageIndex >= activeChatPins.length) {
+        activePinnedMessageIndex = 0;
+    }
+    renderPinnedBanner();
+});
+
+socket.on("user-blocked", ({ targetUserId, isBlocked }) => {
+    showToast(isBlocked ? "User blocked successfully" : "User unblocked successfully", "info");
+    
+    if (activeChatDetails && !activeChatDetails.isGroup) {
+        const other = activeChatDetails.participants.find(p => p.id === targetUserId);
+        if (other) {
+            other.isBlockedByMe = isBlocked;
+            
+            const blockBtn = document.getElementById("blockUserBtn");
+            if (blockBtn) {
+                blockBtn.title = isBlocked ? "Unblock User" : "Block User";
+                blockBtn.innerHTML = isBlocked 
+                    ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="var(--wa-green)" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>`
+                    : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>`;
+            }
+        }
+    }
+    socket.emit("get-conversations");
+    socket.emit("get-contacts");
+});
+
+socket.on("chat-muted", ({ chatId, isMuted }) => {
+    showToast(isMuted ? "Chat muted" : "Chat unmuted", "info");
+    
+    if (activeChatId === chatId && activeChatDetails) {
+        activeChatDetails.isMuted = isMuted;
+        
+        const muteBtn = document.getElementById("muteChatBtn");
+        if (muteBtn) {
+            muteBtn.title = isMuted ? "Unmute Chat" : "Mute Chat";
+            muteBtn.innerHTML = isMuted
+                ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="var(--wa-green)" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></svg>`
+                : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></svg>`;
+        }
+    }
+    socket.emit("get-conversations");
+});
+
+socket.on("chat-archived", ({ chatId, isArchived }) => {
+    showToast(isArchived ? "Chat archived" : "Chat unarchived", "info");
+    
+    if (activeChatId === chatId && activeChatDetails) {
+        activeChatDetails.isArchived = isArchived;
+        
+        const archiveBtn = document.getElementById("archiveChatBtn");
+        if (archiveBtn) {
+            archiveBtn.title = isArchived ? "Unarchive Chat" : "Archive Chat";
+            archiveBtn.innerHTML = isArchived
+                ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="var(--wa-green)" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>`
+                : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>`;
+        }
+        
+        if (isArchived && !showingArchivedOnly) {
+            backToChatList();
+        }
+    }
+    socket.emit("get-conversations");
+});
+
+socket.on("search-messages-results", ({ chatId, query, messages }) => {
+    if (chatId !== activeChatId) return;
+    
+    const resultsContainer = document.getElementById("messageSearchResults");
+    if (!resultsContainer) return;
+    
+    resultsContainer.innerHTML = "";
+    
+    if (!messages || messages.length === 0) {
+        resultsContainer.innerHTML = `
+            <div style="font-size: 12px; color: var(--text-secondary); text-align: center; padding: 8px 0;">No results found for "${query}"</div>
+        `;
+        resultsContainer.style.display = "flex";
+        return;
+    }
+    
+    messages.forEach(msg => {
+        const item = document.createElement("div");
+        item.className = "search-result-item";
+        item.style.padding = "8px 12px";
+        item.style.borderRadius = "8px";
+        item.style.background = "var(--bg-primary)";
+        item.style.border = "1px solid var(--border-color)";
+        item.style.cursor = "pointer";
+        
+        item.onclick = () => {
+            const el = document.getElementById(`msg-${msg.id}`);
+            if (el) {
+                el.scrollIntoView({ behavior: "smooth", block: "center" });
+                el.classList.add("highlight-pulse");
+                setTimeout(() => el.classList.remove("highlight-pulse"), 2000);
+            } else {
+                showToast("Message not in view. Scroll up to load older messages.", "info");
+            }
+        };
+        
+        item.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <span style="font-weight: 600; font-size: 12px; color: var(--wa-green);">${msg.name}</span>
+                <span style="font-size: 10px; color: var(--text-secondary);">${formatTimeShort(msg.createdAt)}</span>
+            </div>
+            <div style="font-size: 12.5px; color: var(--text-primary); text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${msg.message}</div>
+        `;
+        resultsContainer.appendChild(item);
+    });
+    
+    resultsContainer.style.display = "flex";
 });
 
 socket.on("unread-updated", ({ chatId, unreadCount }) => {
@@ -3610,6 +4091,32 @@ function openMobileMessageMenu(data, isMe, containerEl) {
     };
     content.appendChild(fwdBtn);
 
+    // Pin
+    const isGroupAdmin = activeChatDetails && activeChatDetails.isGroup && activeChatDetails.admin && currentUserId && activeChatDetails.admin.toString() === currentUserId.toString();
+    const canPin = activeChatDetails && (!activeChatDetails.isGroup || isGroupAdmin);
+    if (canPin) {
+        const pinBtn = document.createElement("button");
+        pinBtn.className = "mobile-menu-btn";
+        pinBtn.innerHTML = `Pin`;
+        pinBtn.onclick = () => {
+            socket.emit("pin-message", { chatId: activeChatId, messageId: data.id });
+            menu.remove(); backdrop.remove();
+        };
+        content.appendChild(pinBtn);
+    }
+
+    // Edit
+    if (isMe && data.message && !data.file) {
+        const editBtn = document.createElement("button");
+        editBtn.className = "mobile-menu-btn";
+        editBtn.innerHTML = `Edit`;
+        editBtn.onclick = () => {
+            initEdit(data.id, data.message);
+            menu.remove(); backdrop.remove();
+        };
+        content.appendChild(editBtn);
+    }
+
     // Delete
     const delBtn = document.createElement("button");
     delBtn.className = "mobile-menu-btn delete";
@@ -3686,3 +4193,224 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+function toggleBlockState() {
+    if (!activeChatDetails || activeChatDetails.isGroup) return;
+    const other = activeChatDetails.participants.find(p => p && p.mobileNumber && currentMobileNumber && p.mobileNumber !== currentMobileNumber);
+    if (!other) return;
+    const isBlocked = other.isBlockedByMe;
+    if (isBlocked) {
+        socket.emit("unblock-user", { targetUserId: other.id });
+    } else {
+        socket.emit("block-user", { targetUserId: other.id });
+    }
+}
+
+function toggleMuteState() {
+    if (!activeChatId || !activeChatDetails) return;
+    const isMuted = activeChatDetails.isMuted;
+    if (isMuted) {
+        socket.emit("unmute-chat", { chatId: activeChatId });
+    } else {
+        socket.emit("mute-chat", { chatId: activeChatId, durationHours: -1 });
+    }
+}
+
+function toggleArchiveState() {
+    if (!activeChatId || !activeChatDetails) return;
+    const isArchived = activeChatDetails.isArchived;
+    if (isArchived) {
+        socket.emit("unarchive-chat", { chatId: activeChatId });
+    } else {
+        socket.emit("archive-chat", { chatId: activeChatId });
+    }
+}
+
+function toggleMessageSearch() {
+    const searchBar = document.getElementById("messageSearchBar");
+    const resultsContainer = document.getElementById("messageSearchResults");
+    if (!searchBar) return;
+    
+    if (searchBar.style.display === "none") {
+        searchBar.style.display = "block";
+        const input = document.getElementById("messageSearchInput");
+        if (input) {
+            input.value = "";
+            input.focus();
+        }
+    } else {
+        searchBar.style.display = "none";
+        if (resultsContainer) {
+            resultsContainer.innerHTML = "";
+            resultsContainer.style.display = "none";
+        }
+        if (activeChatId) {
+            const container = document.getElementById(`chat-dom-${activeChatId}`);
+            if (container) {
+                Array.from(container.children).forEach(child => {
+                    child.style.display = "";
+                });
+            }
+        }
+    }
+}
+
+function onMessageSearchInput(event) {
+    const query = event.target.value.toLowerCase().trim();
+    if (!activeChatId) return;
+    
+    const resultsContainer = document.getElementById("messageSearchResults");
+    if (!query) {
+        if (resultsContainer) {
+            resultsContainer.innerHTML = "";
+            resultsContainer.style.display = "none";
+        }
+        const container = document.getElementById(`chat-dom-${activeChatId}`);
+        if (container) {
+            Array.from(container.children).forEach(child => {
+                child.style.display = "";
+            });
+        }
+        return;
+    }
+    
+    if (socket && socket.connected) {
+        if (this.searchTimeout) clearTimeout(this.searchTimeout);
+        this.searchTimeout = setTimeout(() => {
+            socket.emit("search-messages", { chatId: activeChatId, query: query });
+        }, 300);
+    }
+    
+    const container = document.getElementById(`chat-dom-${activeChatId}`);
+    if (!container) return;
+    
+    Array.from(container.children).forEach(child => {
+        const textNode = child.querySelector(".message-text");
+        if (textNode) {
+            const text = textNode.textContent.toLowerCase();
+            child.style.display = text.includes(query) ? "" : "none";
+        } else if (child.querySelector(".system-message")) {
+            const text = child.querySelector(".system-message").textContent.toLowerCase();
+            child.style.display = text.includes(query) ? "" : "none";
+        } else {
+            child.style.display = "none";
+        }
+    });
+}
+
+function unpinCurrentMessage(event) {
+    if (event) event.stopPropagation();
+    if (!activeChatId || !activeChatPins || activeChatPins.length === 0) return;
+    const currentPin = activeChatPins[activePinnedMessageIndex];
+    if (!currentPin) return;
+    socket.emit("unpin-message", { chatId: activeChatId, messageId: currentPin.id });
+}
+
+function cyclePinnedMessages(event) {
+    if (event) event.stopPropagation();
+    if (!activeChatPins || activeChatPins.length <= 1) return;
+    activePinnedMessageIndex = (activePinnedMessageIndex + 1) % activeChatPins.length;
+    renderPinnedBanner();
+}
+
+function scrollToPinnedMessage() {
+    if (!activeChatPins || activeChatPins.length === 0) return;
+    const currentPin = activeChatPins[activePinnedMessageIndex];
+    if (!currentPin) return;
+    const element = document.getElementById(`msg-${currentPin.id}`);
+    if (element) {
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        element.classList.add("highlight-pulse");
+        setTimeout(() => element.classList.remove("highlight-pulse"), 2000);
+    } else {
+        showToast("Message not in current view. Scroll up to load older messages.", "info");
+    }
+}
+
+function toggleArchivedView(show) {
+    showingArchivedOnly = show;
+    renderConversations(cachedConversations);
+}
+
+function renderPinnedBanner() {
+    const banner = document.getElementById("pinnedMessagesBanner");
+    const bannerText = document.getElementById("pinnedBannerText");
+    const bannerIndex = document.getElementById("pinnedBannerIndex");
+
+    if (!banner || !bannerText || !bannerIndex) return;
+
+    if (!activeChatPins || activeChatPins.length === 0) {
+        banner.style.display = "none";
+        return;
+    }
+
+    banner.style.display = "flex";
+    
+    if (activePinnedMessageIndex >= activeChatPins.length) {
+        activePinnedMessageIndex = 0;
+    }
+    
+    const pin = activeChatPins[activePinnedMessageIndex];
+    let content = pin.message;
+    if (!content) {
+        if (pin.file && pin.file.isVoiceNote) content = "🎤 Voice Note";
+        else if (pin.file) content = "📎 Attachment";
+        else content = "Pinned message";
+    }
+    bannerText.textContent = `${pin.name || "Unknown"}: ${content}`;
+    
+    if (activeChatPins.length > 1) {
+        bannerIndex.textContent = `${activePinnedMessageIndex + 1}/${activeChatPins.length}`;
+        bannerIndex.style.display = "inline";
+    } else {
+        bannerIndex.style.display = "none";
+    }
+}
+
+function formatDuration(seconds) {
+    if (!seconds) return "0s";
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+}
+
+window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+        const searchBar = document.getElementById("messageSearchBar");
+        if (searchBar && searchBar.style.display !== "none") {
+            toggleMessageSearch();
+            return;
+        }
+        
+        const emojiPicker = document.getElementById("emojiPicker");
+        if (emojiPicker && emojiPicker.style.display !== "none") {
+            emojiPicker.style.display = "none";
+            return;
+        }
+        
+        if (editingMessageId) {
+            clearEdit();
+            return;
+        }
+        
+        if (replyingTo) {
+            clearReply();
+            return;
+        }
+        
+        if (activeChatId) {
+            backToChatList();
+        }
+    }
+});
+
+window.toggleBlockState = toggleBlockState;
+window.toggleMuteState = toggleMuteState;
+window.toggleArchiveState = toggleArchiveState;
+window.toggleMessageSearch = toggleMessageSearch;
+window.onMessageSearchInput = onMessageSearchInput;
+window.unpinCurrentMessage = unpinCurrentMessage;
+window.cyclePinnedMessages = cyclePinnedMessages;
+window.scrollToPinnedMessage = scrollToPinnedMessage;
+window.toggleArchivedView = toggleArchivedView;
+window.clearEdit = clearEdit;
